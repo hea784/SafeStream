@@ -85,9 +85,17 @@ object VideoScannerScript {
             var v = ev.target && ev.target.closest ? ev.target.closest('video') : null;
             if (!v) return;
             var u = v.currentSrc || v.src || v.getAttribute('data-video-url') || '';
-            if (!u || u.indexOf('blob:') === 0) return;
+            if (u && u.indexOf('blob:') !== 0) {
+              // 普通地址：直接上报这个视频
+              window.SafeStreamBridge.postMessage(JSON.stringify({
+                url: u, kind: 'click', page: location.href
+              }));
+              return;
+            }
+            // blob: 流（MSE）：地址在页面外没有意义，但用户已经用点击表达了
+            // "要播这个"，此时网络钩子早就抓到真实清单了，让主进程去播已发现的媒体。
             window.SafeStreamBridge.postMessage(JSON.stringify({
-              url: u, kind: 'click', page: location.href
+              url: '', kind: 'play-found', page: location.href
             }));
           } catch (e) {}
         }, true);
@@ -166,6 +174,44 @@ object VideoScannerScript {
           map[it.url] = it; order.push(it);
         }
         send(order);
+        var eps = scanEpisodes();
+        if (eps.length) {
+          try {
+            window.SafeStreamBridge.postMessage(JSON.stringify({ episodes: eps }));
+          } catch (e) {}
+        }
+      }
+
+      // ---- 选集识别 ----
+      // 连续剧的每一集是独立页面（实测 /video/<剧id>/ep-<集号>/），不是媒体地址，
+      // 所以必须单独识别出来，交给上层去"加载该页 -> 发现其媒体 -> 播放"。
+      function scanEpisodes() {
+        var out = [], seen = {};
+        function add(url, ep, title) {
+          if (!url) return;
+          var abs;
+          try { abs = new URL(url, location.href).href; } catch (e) { return; }
+          if (seen[abs]) return;
+          seen[abs] = 1;
+          out.push({url: abs, ep: ep, title: title || '', page: location.href});
+        }
+        var nodes = document.querySelectorAll('[data-ep-id],[data-fs-ep],[data-episode],a[href*="/ep-"]');
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var ep = el.getAttribute('data-ep-id') || el.getAttribute('data-fs-ep')
+                || el.getAttribute('data-episode');
+          var href = el.getAttribute('href');
+          if (!ep && href) {
+            var m = href.match(/\/ep-(\d+)/);
+            if (m) ep = m[1];
+          }
+          if (!ep) continue;
+          // 没有 href 的按钮走 JS，构造不出地址就跳过，不硬编
+          if (!href) continue;
+          add(href, ep, (el.textContent || '').trim().slice(0, 40));
+        }
+        out.sort(function (a, b) { return parseInt(a.ep, 10) - parseInt(b.ep, 10); });
+        return out;
       }
 
       // 站点常有懒加载，需要观察 DOM 变化后重扫

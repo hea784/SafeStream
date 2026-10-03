@@ -33,6 +33,12 @@ object Bridge {
     /** 沙箱上报/请求：用户在沙箱搜索栏里输入了新地址，请主进程接管校验与调度。 */
     const val ACTION_NAVIGATE = "com.heasafe.safestream.NAVIGATE"
 
+    /** 沙箱上报：用户在网页里点了某个（blob 流）视频，请播本页已发现的媒体。 */
+    const val ACTION_PLAY_FOUND = "com.heasafe.safestream.PLAY_FOUND"
+
+    /** 沙箱上报：这一页有选集列表。 */
+    const val ACTION_EPISODES_FOUND = "com.heasafe.safestream.EPISODES_FOUND"
+
     const val EXTRA_VIDEO_JSON = "video_json"
     const val EXTRA_TITLE = "title"
     const val EXTRA_MESSAGE = "message"
@@ -41,4 +47,20 @@ object Bridge {
 
     /** 用户已确认放行明文的主机名；为空表示不放行任何明文。 */
     const val EXTRA_INSECURE_HOST = "insecure_host"
+
+    /**
+     * 沙箱 -> 主进程的全部 action。
+     *
+     * 集中列在这里而不是散在 registerReceiver 里：新增 action 时若忘了加进
+     * IntentFilter，广播会被系统静默丢弃，表现为"功能完全不工作"且毫无日志线索
+     * （这个坑踩过一次，EPISODES_FOUND 就是这么丢的）。
+     */
+    val TO_MAIN_ACTIONS = setOf(
+        ACTION_VIDEOS_FOUND,
+        ACTION_PAGE_TITLE,
+        ACTION_SECURITY_EVENT,
+        ACTION_NAVIGATE,
+        ACTION_PLAY_FOUND,
+        ACTION_EPISODES_FOUND,
+    )
 }

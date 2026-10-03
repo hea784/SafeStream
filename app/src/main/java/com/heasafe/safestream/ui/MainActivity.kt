@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -58,6 +59,15 @@ class MainActivity : AppCompatActivity() {
     /** 最近一次交给沙箱的地址，"浏览"标签复用它。 */
     private var lastSandboxUrl: String? = null
 
+    /** 用户选中的剧集：页面加载完、媒体被发现后自动播它。 */
+    private var pendingEpisode: VideoItem? = null
+
+    /** 正在提交的地址：用于去重，避免同一次提交被触发两遍把播放列表清空。 */
+    private var submittingUrl: String? = null
+
+    /** 上次提交的时刻，用于防抖。 */
+    private var lastSubmitAt: Long = 0L
+
     private val sandboxReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -83,9 +93,17 @@ class MainActivity : AppCompatActivity() {
                 Bridge.ACTION_NAVIGATE -> {
                     // 沙箱搜索栏回车：走和主界面一样的校验流程，不在沙箱里自行放行
                     val target = intent.getStringExtra(Bridge.EXTRA_URL).orEmpty()
-                    binding.urlInput.setText(target)
-                    submitUrl()
+                    // 沙箱已经在显示这个地址就别再走一遍流程
+                    if (target != lastSandboxUrl) {
+                        binding.urlInput.setText(target)
+                        submitUrl()
+                    }
                 }
+
+                Bridge.ACTION_PLAY_FOUND -> playFirstDiscovered()
+
+                Bridge.ACTION_EPISODES_FOUND ->
+                    intent.getStringExtra(Bridge.EXTRA_VIDEO_JSON)?.let(::onEpisodesFound)
             }
         }
     }
@@ -150,6 +168,14 @@ class MainActivity : AppCompatActivity() {
     private fun submitUrl() {
         val raw = binding.urlInput.text?.toString().orEmpty().trim()
         if (raw.isEmpty()) return
+
+        // 同一地址的重复提交直接忽略。
+        // 实测踩过：沙箱搜索栏回车会广播 NAVIGATE 回来，不拦截就会二次提交，
+        // 而 startSandbox 会清空播放列表 —— 表现为选集刚填好又变空。
+        val now = SystemClock.elapsedRealtime()
+        if (submittingUrl == raw && now - lastSubmitAt < SUBMIT_DEBOUNCE_MS) return
+        submittingUrl = raw
+        lastSubmitAt = now
 
         // 输入的如果不是网址，就当搜索词处理，省得用户自己拼搜索引擎
         if (looksLikeKeyword(raw)) {
@@ -299,6 +325,16 @@ class MainActivity : AppCompatActivity() {
         // 只有一个视频时直接开始，省一次点击；已经在播同一个就不重启
         val only = next.singleOrNull()
         if (only != null && only.url != playingUrl) playAt(0, only)
+
+        // 选集场景：用户点了第 N 集，现在该页的媒体到手了，自动播它
+        val waiting = pendingEpisode
+        if (waiting != null) {
+            val media = next.firstOrNull { !it.isEpisode && it.isPlayable }
+            if (media != null) {
+                pendingEpisode = null
+                playAt(next.indexOf(media), media)
+            }
+        }
     }
 
     /** 沙箱里点了视频：不进列表，直接播。 */
@@ -314,6 +350,58 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 用户在网页里点了 blob 流视频：播本页已经发现到的第一个可播媒体。 */
+    private fun playFirstDiscovered() {
+        val target = videos.firstOrNull { it.isPlayable }
+        if (target == null) {
+            toast(getString(R.string.no_playable_source))
+            return
+        }
+        playAt(videos.indexOf(target), target)
+    }
+
+    /**
+     * 选集并入播放列表。
+     *
+     * 选集条目排在媒体条目前面：用户想选的是"第几集"，不是页面里恰好抓到的那一个
+     * m3u8。同一页反复上报时按 URL 去重。
+     */
+    private fun onEpisodesFound(json: String) {
+        val arr = JSONArray(json)
+        val parsed = ArrayList<VideoItem>(arr.length())
+        for (i in 0 until arr.length()) {
+            VideoItem.fromJson(arr.optString(i))?.let(parsed::add)
+        }
+        if (parsed.isEmpty()) return
+        val merged = LinkedHashMap<String, VideoItem>()
+        parsed.forEach { merged[it.url] = it }
+        videos.filterNot { it.isEpisode }.forEach { merged[it.url] = it }
+        val next = merged.values.toList()
+        if (next == videos) return
+        videos = next
+        adapter.submitList(next)
+        updatePlaylistUi()
+    }
+
+    /**
+     * 选中某一集：加载该集页面，等它暴露媒体地址后自动播。
+     *
+     * 若选中的正好是当前页（常见于第 1 集），不重复加载，直接播已发现的媒体。
+     */
+    private fun playEpisode(item: VideoItem) {
+        if (item.url == lastSandboxUrl) {
+            val found = videos.firstOrNull { !it.isEpisode && it.isPlayable }
+            if (found != null) {
+                playAt(videos.indexOf(found), found)
+                return
+            }
+        }
+        pendingEpisode = item
+        playingUrl = null
+        toast("正在加载第 ${item.episodeNo} 集")
+        startSandbox(item.url)
+    }
+
     private fun onSecurityEvent(message: String) {
         if (message == "PURGED") return
         if (message.startsWith("已拦截")) blockedCount++
@@ -326,6 +414,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playAt(index: Int, item: VideoItem) {
+        if (item.isEpisode) {
+            playEpisode(item)
+            return
+        }
         if (!item.isPlayable) {
             toast(getString(R.string.no_playable_source))
             return
@@ -390,9 +482,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun registerSandboxReceiver() {
         val filter = IntentFilter().apply {
-            addAction(Bridge.ACTION_VIDEOS_FOUND)
-            addAction(Bridge.ACTION_PAGE_TITLE)
-            addAction(Bridge.ACTION_SECURITY_EVENT)
+            Bridge.TO_MAIN_ACTIONS.forEach { addAction(it) }
         }
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(sandboxReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -445,6 +535,7 @@ class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val LOG_TAG = "SafeStream"
+        const val SUBMIT_DEBOUNCE_MS = 2000L
 
         /** 输入的不是网址时，按搜索词拼到这个前缀后交给沙箱。 */
         const val SEARCH_PREFIX = "https://www.bing.com/search?q="

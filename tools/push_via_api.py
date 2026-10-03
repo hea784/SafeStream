@@ -47,7 +47,7 @@ def gh_token():
 TOKEN = gh_token()
 
 
-def call(method, path, payload=None):
+def call(method, path, payload=None, allow_missing=False):
     url = API + "/repos/" + REPO + path
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -55,8 +55,16 @@ def call(method, path, payload=None):
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("Content-Type", "application/json")
     req.add_header("User-Agent", "safestream-push")
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if allow_missing and exc.code == 404:
+            return None
+        # GitHub 的错误信息在 body 里，丢掉它就只能看到光秃秃的 400，
+        # 无法定位到底是 blob 太大、内容非法还是限流。
+        body = exc.read().decode("utf-8", "replace")[:600]
+        raise SystemExit("HTTP %s %s\n%s" % (exc.code, exc.reason, body))
 
 
 def git(*args, binary=False):
@@ -75,7 +83,8 @@ def main():
 
     for mode, sha, path in entries:
         try:
-            if call("GET", "/git/blobs/" + sha)["sha"] == sha:
+            cached = call("GET", "/git/blobs/" + sha, allow_missing=True)
+            if cached and cached["sha"] == sha:
                 print("  cached  ", path)
                 continue
         except urllib.error.HTTPError:

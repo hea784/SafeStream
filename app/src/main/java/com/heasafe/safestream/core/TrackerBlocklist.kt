@@ -45,6 +45,8 @@ object TrackerBlocklist {
         "ahrefs.com",
         "cloudflareinsights.com",
         "ssp-core.jsdelivr.com",
+        // 实测自 akep5.xxpofweu.cc：埋点上报
+        "eventtracking.cyou",
     )
 
     private val DOMAIN_SUBSTRINGS = listOf(
@@ -56,6 +58,11 @@ object TrackerBlocklist {
         "analytics", "collect.",
         // 该站广告 SDK：ssp-core-vX.js / ssp-mount.js，负责插屏与全屏广告
         "ssp-core", "ssp-mount",
+        // 实测：api-ad1/ad3/ad4/ad5.adsdk1-5.cc 广告接口。
+        // 原来的 "ads." 匹配不到 —— "ads" 后面是 k 不是点。
+        "adsdk", "adsdk1.cc", ".adsdk",
+        // 埋点上报接口路径
+        "/eventtracking/", "batchreport.json",
     )
 
     private val PATH_MARKERS = listOf(
@@ -65,11 +72,27 @@ object TrackerBlocklist {
         "/coinhive.min.js", "/cryptonight",
     )
 
+    /**
+     * 常见但非标准的端口：埋点上报、矿池、远控等。
+     * 正常 CDN 极少用裸 IP 配这些端口，所以拦下来误伤概率很低。
+     */
+    private val SUSPICIOUS_PORTS = setOf(15212, 4443, 1337, 31337)
+
+    private val IP_LITERAL = Regex("""^\d{1,3}(\.\d{1,3}){3}$""")
+
     /** 是否应当拦截这个请求。 */
     fun isBlocked(url: String): Boolean {
         val lower = url.lowercase(Locale.ROOT)
 
-        val host = runCatching { URI(lower).host }.getOrNull()
+        val uri = runCatching { URI(lower) }.getOrNull()
+        val host = uri?.host
+
+        // 裸 IP + 非常规端口：域名黑名单对 IP 字面量完全无效，必须单独判。
+        // 实测该站往 4 个裸 IP 的 15212 端口上报埋点。
+        if (host != null && IP_LITERAL.matches(host) &&
+            uri.port in SUSPICIOUS_PORTS
+        ) return true
+
         if (host != null && DOMAINS.any { host == it || host.endsWith(".$it") }) {
             return true
         }

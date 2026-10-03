@@ -201,8 +201,18 @@ class WebHostActivity : ComponentActivity() {
                 isMainFrame: Boolean,
                 replyProxy: JavaScriptReplyProxy,
             ) {
-                if (message.type != WebMessageCompat.TYPE_STRING) return
-                dispatchDiscovered(message.data.orEmpty())
+                // 不要用 message.type 判断类型：框架 WebMessage.TYPE_STRING 是 0，
+                // 而 androidx 的 WebMessageCompat.TYPE_STRING 是 1（它给类型加了偏移）。
+                // 在 WebView 124 上按常量判断会把每一条消息都丢掉，表现为静默无产出。
+                // 直接取 data 更稳，且不依赖版本相关的常量映射。
+                val payload = message.data
+                if (payload.isNullOrBlank()) return
+                android.util.Log.d(
+                    "SafeStream",
+                    "onPostMessage type=${message.type} main=$isMainFrame len=" +
+                        payload.length,
+                )
+                dispatchDiscovered(payload)
             }
         }
         WebViewCompat.addWebMessageListener(
@@ -220,6 +230,12 @@ class WebHostActivity : ComponentActivity() {
         // 网络钩子单条上报：{"url":..., "kind":"fetch|xhr|mse"}
         if (root.has("url") && !root.has("batch")) {
             reportNetworkHit(root)
+            return
+        }
+
+        // 选集上报：{"episodes":[{"url","ep","title","page"}]}
+        if (root.has("episodes")) {
+            reportEpisodes(root.optJSONArray("episodes"))
             return
         }
 
@@ -256,10 +272,52 @@ class WebHostActivity : ComponentActivity() {
      * "mse:video/mp2t" 这类只是流类型声明，不是可播放地址，丢掉。
      * 真正的 .m3u8/.mp4 直接进列表，这样 MSE/blob 页面也能在原生播放器里播。
      */
+    /**
+     * 选集转成播放列表条目。
+     *
+     * 剧集是页面地址而不是媒体地址，标记为 EPISODE；主进程在用户选中时再去加载
+     * 对应页面、发现它的媒体并播放。
+     */
+    private fun reportEpisodes(arr: org.json.JSONArray?) {
+        if (arr == null || arr.length() == 0) return
+        val json = org.json.JSONArray()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val url = o.optString("url")
+            if (!UrlGuard.allowNavigation(url)) continue
+            json.put(
+                org.json.JSONObject().apply {
+                    put("url", url)
+                    put("title", o.optString("title"))
+                    put("mimeType", "")
+                    put("durationMs", 0)
+                    put("sourcePage", o.optString("page"))
+                    put("kind", "EPISODE")
+                    put("episodeNo", o.optInt("ep"))
+                },
+            )
+        }
+        if (json.length() == 0) return
+        sendUp(Bridge.ACTION_EPISODES_FOUND) {
+            putExtra(Bridge.EXTRA_VIDEO_JSON, json.toString())
+        }
+    }
+
     private fun reportNetworkHit(o: org.json.JSONObject) {
         val url = o.optString("url")
         val kind = o.optString("kind")
         if (kind == "mse" || url.startsWith("mse:")) return
+
+        // 用户点了 blob: 流：播本页已经发现到的媒体即可。
+        // 地址本身在页面外没有意义，但点击已经表达了播放意图。
+        if (kind == "play-found") {
+            sendUp(Bridge.ACTION_PLAY_FOUND) {
+                putExtra(Bridge.EXTRA_MESSAGE, "PLAY_FOUND")
+            }
+            binding.root.postDelayed({ finish() }, 150)
+            return
+        }
+
         if (!UrlGuard.allowNavigation(url)) return
 
         // 用户在网页里点了某个视频：把这个地址交给主进程播放，
@@ -301,7 +359,19 @@ class WebHostActivity : ComponentActivity() {
     private fun injectScanner() {
         val js = VideoScannerScript.SOURCE
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            // 原生侧探针：直接读页面里桥接对象是否存在。
+            // JS 侧所有 postMessage 都被 try/catch 包着，桥接缺失时是静默失败，
+            // 没有这行日志就只能靠猜。
+            webView.evaluateJavascript("String(typeof window.SafeStreamBridge)") { r ->
+                android.util.Log.d(
+                    "SafeStream",
+                    "bridge=" + r + " featureSupported=" +
+                        WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER),
+                )
+            }
             webView.evaluateJavascript(js, null)
+        } else {
+            android.util.Log.w("SafeStream", "WebView 不支持 WEB_MESSAGE_LISTENER，选集与网络发现不可用")
         }
     }
 

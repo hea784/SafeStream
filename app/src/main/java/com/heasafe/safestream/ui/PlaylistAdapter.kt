@@ -39,7 +39,8 @@ class PlaylistAdapter(
 
             b.videoTitle.text = item.title
             b.videoMeta.text = metaLine(item)
-            b.videoIndex.text = (position + 1).toString()
+            b.videoIndex.text = if (item.isEpisode) item.episodeNo.toString()
+            else (position + 1).toString()
             b.playingBadge.visibility = if (active) View.VISIBLE else View.GONE
 
             val accent = ContextCompat.getColor(ctx, R.color.brand)
@@ -62,6 +63,7 @@ class PlaylistAdapter(
         }
 
         private fun metaLine(item: VideoItem): String {
+            if (item.isEpisode) return "整集"
             val kind = when {
                 !item.isPlayable -> item.contextLabel()
                 item.url.contains(".m3u8") -> "HLS"

@@ -14,6 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         resourceConfigurations += listOf("zh", "en")
+        // 默认关闭：SSRF 防护。debug 构建会覆盖为 true 作为本地测试接缝。
+        buildConfigField("boolean", "ALLOW_PRIVATE_HOSTS", "false")
     }
 
     buildTypes {
@@ -30,6 +32,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // 测试接缝：自动化测试需要用 adb reverse + 本地 HTTP 服务跑通
+            // "沙箱 -> 发现 -> 播放" 链路，而本地地址默认被 UrlGuard 的 SSRF 防护拒绝。
+            // release 里恒为 false，SSRF 防护不受影响。
+            buildConfigField("boolean", "ALLOW_PRIVATE_HOSTS", "true")
         }
     }
 
@@ -44,6 +50,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 }
 

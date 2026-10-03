@@ -12,13 +12,16 @@ Android WebView 和系统浏览器共用同一个渲染内核，没有任何第�
 SafeStream 的做法是**最小权限 + 无桥接 + 可观测**：不给页面任何原生能力、不给它任何本地访问、
 把它关在一个独立进程里、退出就擦干净。声称绝对安全的实现都是不可信的。
 
-**二、编译状态：debug 与 release 均已实测通过。**
+**二、编译与运行状态：均已在模拟器上实测通过。**
 在 Windows 11 + Temurin JDK 17.0.20.1 + Android SDK 35 + Gradle 8.13 下，
 `assembleDebug` 与 `assembleRelease`（含 R8 混淆、资源压缩、`lintVitalRelease`）均为
 `BUILD SUCCESSFUL`，debug APK 9.36 MB。
 
-**运行状态：未在真机或模拟器上启动过。** 仓库里有可用的 android-35 x86_64 系统镜像，
-可以建 AVD 做运行时验证，但尚未做。所以"能编译"不等于"功能已验证"。
+运行验证在 AVD `venera_test`（pixel_6 / API 35 / x86_64 / 1080x2400）上完成，
+用本地 HTTP 夹具页跑通了"沙箱打开页面 -> 发现视频 -> 原生播放"全链路，
+自动化脚本见 [tools/e2e_smoke.py](tools/e2e_smoke.py)，实测截图见 [docs/screenshots/](docs/screenshots/)。
+
+未验证：真机（不同厂商 WebView）、ARM 架构、HLS/DASH 流、字幕、投屏、后台播放。
 
 ## 架构
 
@@ -45,6 +48,16 @@ SafeStream 的做法是**最小权限 + 无桥接 + 可观测**：不给页面�
 
 另外 WebView 的 Safe Browsing **没有 API 也没有 WebSettings 开关**，
 只能用 `AndroidManifest.xml` 里的 `android.webkit.WebView.EnableSafeBrowsing` meta-data 开启。
+
+### 运行期才暴露的三个坑（编译全部通过）
+
+1. **明文对话框是假的。** 原实现里 `cleartextTrafficPermitted=false` 让 WebView 在平台网络栈
+   就掐断明文，用户点"仍要加载"也没用，页面全白。现在平台层放开、闸门移到
+   `shouldInterceptRequest`，只放行用户确认过的 host 及其子域。
+2. **RecyclerView 没设 LayoutManager。** 适配器里数据齐全、标题也显示"发现 3 个视频"，
+   但列表一行都不渲染。编译期和 `lintVitalRelease` 都不会报，只有真跑起来才看得见。
+3. **播放器默认撑满整屏。** 黑色视频区把播放列表和倍速按钮全挤到导航栏后面。
+   改成 16:9 固定比例 + 列表常驻 + 居中空状态。
 
 ## 安全设计（对应 PROMPT.md 第 4 节）
 
@@ -108,6 +121,28 @@ $env:JAVA_HOME="D:\dev-tools\sdks\jdk-17.0.20.1+1"
 $env:ANDROID_HOME="D:\dev-tools\sdks\android-sdk"
 $env:GRADLE_USER_HOME="D:\dev-tools\caches\gradle"
 ```
+
+## 跑自动化冒烟测试
+
+```bash
+# 1. 启动 AVD（avd_home 必须显式给出，否则报 Unknown AVD name）
+ANDROID_AVD_HOME=D:\dev-tools\caches\android\avd \
+  D:\dev-tools\sdks\android-sdk\emulator\emulator.exe \
+  -avd venera_test -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim
+
+# 2. 生成夹具（需要 ffmpeg）与本地服务
+python tools/make_test_fixture.py
+cd tools/testfixture && python -m http.server 8099 --bind 127.0.0.1
+
+# 3. 让设备能访问宿主服务
+adb -s emulator-5554 reverse tcp:8099 tcp:8099
+
+# 4. 跑测试
+python tools/e2e_smoke.py
+```
+
+测试用的 `ALLOW_PRIVATE_HOSTS` 与明文放行只对 debug 构建生效，
+release 里 `UrlGuard` 的内网拦截与明文闸门都保持默认拒绝。
 
 ## 许可
 

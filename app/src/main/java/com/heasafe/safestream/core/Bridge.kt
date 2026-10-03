@@ -35,4 +35,7 @@ object Bridge {
     const val EXTRA_MESSAGE = "message"
     const val EXTRA_ENABLED = "enabled"
     const val EXTRA_URL = "url"
+
+    /** 用户已确认放行明文的主机名；为空表示不放行任何明文。 */
+    const val EXTRA_INSECURE_HOST = "insecure_host"
 }

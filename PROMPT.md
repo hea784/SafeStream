@@ -33,6 +33,11 @@
 2. **零 `addJavascriptInterface`**。页面→原生唯一通道是 `WebViewCompat.addWebMessageListener`（带 allowedOriginRules 白名单），不暴露任何原生对象。
 3. 拒绝一切非 `https`/`http` 的导航：`file://`、`content://`、`intent://`、`market://`、`javascript:`、`blob:`、`data:` 一律 `return true`（即拦截）。
 4. `http://` 默认拦截并提示用户"该站点未加密"，需用户显式放行。
+   **实现细节（实测踩坑）**：`network_security_config.xml` 的
+   `cleartextTrafficPermitted` 必须为 `true`，否则 WebView 在**平台网络栈**就会掐断明文，
+   用户在对话框里点"仍要加载"也没用——对话框成了假的，页面一片空白。
+   真正的闸门因此放在 `shouldInterceptRequest`：只放行用户确认过的那个 host 及其子域。
+   代价是平台层不再兜底，该拦截必须始终保持"默认拒绝"。
 5. 文件访问全关：`allowFileAccess=false`、`allowContentAccess=false`、`allowFileAccessFromFileURLs=false`、`allowUniversalAccessFromFileURLs=false`。
 6. 混合内容一律拒绝：`MIXED_CONTENT_NEVER_ALLOW`；`networkSecurityConfig` 中 `cleartextTrafficPermitted=false`。
 7. 不申请任何位置/相机/麦克风/通讯录/存储权限；`onPermissionRequest` 与 `onGeolocationPermissionsShowPrompt` 一律 `deny()`。
@@ -76,12 +81,29 @@
 **P2（暂不做）**
 - 离线下载、账号体系、推荐算法、多端同步
 
-## 6. 验收方式
+## 6. 验收方式与实测结论
 
-- `./gradlew assembleDebug` 通过。
-- 手测：打开一个含多个视频的页面，播放列表条数与页面中视频数量一致。
-- 安全回归：页面尝试 `file://` 跳转、弹窗、请求定位、触发下载，均无任何系统级反应。
-- 关闭沙箱后重新打开同一站点，Cookie 状态为"全新访客"。
+自动化脚本 `tools/e2e_smoke.py`，夹具 `tools/make_test_fixture.py`（生成 3 个真实 mp4 +
+含视频与恶意链接的测试页），在 AVD `venera_test` 上执行。
+
+| 验收项 | 状态 |
+| --- | --- |
+| `assembleDebug` / `assembleRelease` | 已通过 |
+| App 冷启动、无崩溃 | 已通过 |
+| 明文 HTTP 触发警告对话框 | 已通过 |
+| 沙箱以 `:sandbox` 独立进程运行 | 已通过（ps 实证两个 pid） |
+| 广告/跟踪请求被拦截 | 已通过（实测拦下 google-analytics、googlesyndication） |
+| 无外部 Activity 被拉起（file:// / intent:// / market://） | 已通过 |
+| 自动发现 3 个视频 | 已通过 |
+| 播放列表渲染 | 已通过 |
+| 原生播放器解码出真实画面 | 已通过 |
+
+**仍未验证**：真机（不同厂商 WebView）、ARM 架构、HLS/DASH 流、字幕、投屏、
+后台播放与通知栏、Cookie 清理的跨会话效果、真实商业站点的兼容性。
+
+> 教训：上面三个"编译全部通过但运行才炸"的坑（明文对话框失效、RecyclerView 缺
+> LayoutManager、播放器撑满整屏）说明 **UI 与 WebView 的正确性只能靠运行时验证**，
+> 编译和 lint 都不算证据。
 
 ## 7. 参考与借鉴
 

@@ -39,6 +39,12 @@ class WebHostActivity : ComponentActivity() {
     /** 安全契约 12：拦截开关，默认开启。 */
     private var filterEnabled = true
 
+    /**
+     * 安全契约 4：用户显式确认放行明文的主机。
+     * 只有记录在案的主机才允许 http，其余明文请求一律返回空响应。
+     */
+    private var insecureAllowedHost: String? = null
+
     private val controlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -57,6 +63,8 @@ class WebHostActivity : ComponentActivity() {
         setContentView(binding.root)
 
         filterEnabled = intent.getBooleanExtra(Bridge.EXTRA_ENABLED, true)
+        insecureAllowedHost =
+            intent.getStringExtra(Bridge.EXTRA_INSECURE_HOST)?.takeIf { it.isNotBlank() }
 
         val url = intent.getStringExtra(Bridge.EXTRA_URL)
         if (url.isNullOrBlank() || !UrlGuard.allowNavigation(url)) {
@@ -204,6 +212,14 @@ class WebHostActivity : ComponentActivity() {
         }
     }
 
+    private fun isInsecureAllowed(url: String): Boolean {
+        val host = insecureAllowedHost ?: return false
+        val target = runCatching { java.net.URI(url).host }.getOrNull() ?: return false
+        // 只放行该主机本身或其子域，避免授权意外扩散到别处
+        return target.equals(host, ignoreCase = true) ||
+            target.endsWith(".$host", ignoreCase = true)
+    }
+
     private fun registerControlReceiver() {
         val filter = IntentFilter().apply {
             addAction(Bridge.ACTION_PURGE)
@@ -300,8 +316,9 @@ class WebHostActivity : ComponentActivity() {
                 )
             }
 
-            // 安全契约 4：明文 HTTP 一律断掉，不给页面机会降级
-            if (UrlGuard.isInsecure(url)) {
+            // 安全契约 4：明文默认断掉，不给页面降级机会；
+            // 仅当用户在该 host 的警告框里点过"仍要加载"才放行。
+            if (UrlGuard.isInsecure(url) && !isInsecureAllowed(url)) {
                 return WebResourceResponse(
                     "text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)),
                 )
@@ -312,6 +329,18 @@ class WebHostActivity : ComponentActivity() {
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             super.onPageStarted(view, url, favicon)
             injectScanner()
+        }
+
+        override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?,
+        ) {
+            super.onReceivedError(view, request, error)
+            // 静默失败是排查噩梦；主文档失败必须让用户看见原因
+            if (request?.isForMainFrame == true) {
+                reportEvent("加载失败：${error?.description ?: "未知错误"}")
+            }
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {

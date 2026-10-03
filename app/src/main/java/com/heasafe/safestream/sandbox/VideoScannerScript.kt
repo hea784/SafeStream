@@ -41,7 +41,7 @@ object VideoScannerScript {
         var nodes = document.querySelectorAll('video');
         for (var i = 0; i < nodes.length; i++) {
           var v = nodes[i], cands = [];
-          if (v.currentSrc) cands.push({ u: v.currentSrc, m: 'video/unknown' });
+          if (v.currentSrc) cands.push({ u: v.currentSrc, m: '' });
           if (v.src) cands.push({ u: v.src, m: '' });
           var srcs = v.querySelectorAll('source');
           for (var j = 0; j < srcs.length; j++) {

@@ -47,8 +47,11 @@ class PlaylistAdapter(
                 item.url.contains(".m3u8") -> "HLS"
                 item.url.contains(".mpd") -> "DASH"
                 item.mimeType.contains("mpegurl") -> "HLS"
+                item.mimeType.isBlank() || item.mimeType == "video/unknown" ->
+                    // 页面通常不声明 mime，优先从扩展名推断
+                    EXT_LABEL[item.url.substringBefore('?').substringBefore('#')
+                        .substringAfterLast('.').lowercase(Locale.ROOT)] ?: "直链"
                 else -> item.mimeType.substringAfterLast('/').uppercase(Locale.ROOT)
-                    .ifBlank { "直链" }
             }
             val duration = if (item.durationMs > 0) {
                 val ms = item.durationMs
@@ -65,6 +68,10 @@ class PlaylistAdapter(
     }
 
     private companion object {
+        val EXT_LABEL = mapOf(
+            "mp4" to "MP4", "m4v" to "MP4", "webm" to "WEBM",
+            "mov" to "MOV", "mkv" to "MKV", "ts" to "MPEG-TS", "flv" to "FLV",
+        )
         val DIFF = object : DiffUtil.ItemCallback<VideoItem>() {
             override fun areItemsTheSame(a: VideoItem, b: VideoItem) = a.url == b.url
             override fun areContentsTheSame(a: VideoItem, b: VideoItem) = a == b

@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  cleartextTrafficPermitted="false"：默认拒绝所有明文 HTTP。
-  明文 HTTP 只可能通过本地请求拦截层在运行期被单独放行，且需要用户显式确认。
+  平台层的 cleartextTrafficPermitted 必须为 true，否则 WebView 在网络栈就会掐断明文，
+  用户在"该站点未加密"对话框里点确认也没用 —— 这是实测踩到的坑。
+
+  明文的实际闸门在 SafeWebViewClient.shouldInterceptRequest：
+  只有用户显式确认过的 host 才放行明文，其余一律返回空响应。
+  把闸门放在这里而不是平台层，是为了能按 host 做用户授权；代价是
+  平台层不再兜底，因此该拦截逻辑必须始终保持"默认拒绝"。
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

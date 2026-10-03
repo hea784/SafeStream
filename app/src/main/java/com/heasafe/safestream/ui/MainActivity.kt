@@ -120,13 +120,18 @@ class MainActivity : AppCompatActivity() {
                 .setMessage(getString(R.string.warn_insecure_body, verdict.normalized))
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.warn_insecure_ok) { _, _ ->
-                    startSandbox(verdict.normalized)
+                    // 把用户确认的 host 传给沙箱：只有它被允许走明文
+                    startSandbox(verdict.normalized, java.net.URI(verdict.normalized).host)
                 }
                 .show()
         }
     }
 
     private fun startSandbox(url: String) {
+        startSandbox(url, insecureHostAllowed = null)
+    }
+
+    private fun startSandbox(url: String, insecureHostAllowed: String?) {
         stopSandbox()
         blockedCount = 0
         videos = emptyList()
@@ -137,6 +142,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, WebHostActivity::class.java)
             .putExtra(Bridge.EXTRA_URL, url)
             .putExtra(Bridge.EXTRA_ENABLED, filterEnabled)
+            .putExtra(Bridge.EXTRA_INSECURE_HOST, insecureHostAllowed)
         startActivity(intent)
         sandboxRunning = true
         history.rememberVisit(url, url)
@@ -284,11 +290,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlaylistUi() {
         binding.listHeader.text = if (videos.isEmpty()) {
-            getString(R.string.playlist_empty)
+            getString(R.string.playlist_title_found_none)
         } else {
             getString(R.string.playlist_title, videos.count { it.isPlayable })
         }
-        binding.playlistList.visibility = if (videos.isEmpty()) View.GONE else View.VISIBLE
+        // 列表区域常驻，空状态用叠加文字提示，避免隐藏列表把标题挤到底部
+        binding.emptyState.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
         if (!sandboxRunning && binding.statusLine.text.isNullOrBlank()) {
             binding.statusLine.text = getString(R.string.history_empty)
         }

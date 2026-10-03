@@ -1,6 +1,7 @@
 package com.heasafe.safestream.core
 
 import java.net.URI
+import com.heasafe.safestream.BuildConfig
 
 /**
  * URL 输入校验与 scheme 决策。
@@ -57,7 +58,9 @@ object UrlGuard {
         if (host.isNullOrBlank()) return Result.Rejected("缺少主机名")
         if (!host.contains('.') && host != "localhost") return Result.Rejected("主机名不合法")
         // 内网地址：SSRF 到本机/局域网同样是一种危害
-        if (isPrivateHost(host)) return Result.Rejected("不允许访问内网地址：$host")
+        if (isPrivateHost(host) && !BuildConfig.ALLOW_PRIVATE_HOSTS) {
+            return Result.Rejected("不允许访问内网地址：$host")
+        }
 
         return if (scheme == "https") {
             Result.Secure(uri.toString())

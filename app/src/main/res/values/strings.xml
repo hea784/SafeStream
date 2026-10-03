@@ -8,6 +8,8 @@
     <string name="action_clear">清理并退出沙箱</string>
     <string name="playlist_title">发现 %1$d 个视频</string>
     <string name="playlist_empty">该页面暂未发现视频</string>
+    <string name="playlist_title_found_none">播放列表</string>
+    <string name="playlist_empty_hint">在上方粘贴一个视频页面地址并点击「加载」。&#10;App 会在隔离的沙箱进程中打开它，并列出页面里能找到的所有视频。</string>
     <string name="warn_insecure_title">该站点未加密</string>
     <string name="warn_insecure_body">%1$s 使用明文 HTTP 传输，途中可能被篡改。确定仍要加载吗？</string>
     <string name="warn_insecure_ok">仍要加载</string>

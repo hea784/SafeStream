@@ -14,3 +14,5 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+# 测试夹具由 tools/make_test_fixture.py 生成，不入库
+tools/testfixture/

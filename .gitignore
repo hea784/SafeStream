@@ -16,6 +16,12 @@ captures/
 .cxx/
 # 测试夹具由 tools/make_test_fixture.py 生成，不入库
 tools/testfixture/
+tools/testfixture_single/
 # net_diag 的输出是对本机网络的快照，不入库
 vpn_off.txt
 vpn_on.txt
+# 目标站年龄门画面含成人内容标识，不入库
+docs/screenshots/age-gate.png
+docs/screenshots/flicker-dbg.png
+docs/screenshots/ready.png
+docs/screenshots/typed-url.png

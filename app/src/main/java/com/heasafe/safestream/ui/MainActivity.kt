@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
@@ -40,6 +41,15 @@ class MainActivity : AppCompatActivity() {
     private var player: ExoPlayer? = null
     private var videos: List<VideoItem> = emptyList()
     private var currentIndex = RecyclerView.NO_POSITION
+
+    /**
+     * 当前已交给播放器的地址。
+     *
+     * 扫描脚本的 MutationObserver 在广告/懒加载频繁改动的页面上会持续上报，
+     * 每次都重建播放列表会让 ExoPlayer 反复 setMediaItem + prepare，画面不停闪。
+     * 用这个字段做去重：同地址不重启。
+     */
+    private var playingUrl: String? = null
     private var sandboxRunning = false
     private var filterEnabled = true
     private var blockedCount = 0
@@ -134,6 +144,7 @@ class MainActivity : AppCompatActivity() {
     private fun startSandbox(url: String, insecureHostAllowed: String?) {
         stopSandbox()
         blockedCount = 0
+        playingUrl = null
         videos = emptyList()
         adapter.submitList(emptyList())
         currentIndex = RecyclerView.NO_POSITION
@@ -188,13 +199,23 @@ class MainActivity : AppCompatActivity() {
             arr.optString(i).takeIf { it.isNotBlank() }?.let { VideoItem.fromJson(it) }
                 ?.let(parsed::add)
         }
-        videos = parsed
-        adapter.submitList(parsed)
-        currentIndex = RecyclerView.NO_POSITION
+        if (parsed.isEmpty()) return
+
+        // 按 URL 合并而不是整体替换：扫描脚本会反复上报同一批视频，
+        // 整体替换会把播放列表清空又填回，用户看到的是条目不停闪。
+        val merged = LinkedHashMap<String, VideoItem>()
+        videos.forEach { merged[it.url] = it }
+        parsed.forEach { merged.putIfAbsent(it.url, it) }
+        val next = merged.values.toList()
+        if (next == videos) return
+
+        videos = next
+        adapter.submitList(next)
         updatePlaylistUi()
 
-        // 只有一个视频时直接开始，省一次点击
-        if (parsed.size == 1) playAt(0, parsed[0])
+        // 只有一个视频时直接开始，省一次点击；已经在播同一个就不重启
+        val only = next.singleOrNull()
+        if (only != null && only.url != playingUrl) playAt(0, only)
     }
 
     private fun onSecurityEvent(message: String) {
@@ -213,6 +234,11 @@ class MainActivity : AppCompatActivity() {
             toast(getString(R.string.no_playable_source))
             return
         }
+        // 同地址已在播放/加载中就不重建 MediaItem，否则画面会反复重置闪烁
+        if (item.url == playingUrl) return
+
+        Log.d(LOG_TAG, "playAt 重建播放: " + item.url)
+        playingUrl = item.url
         currentIndex = index
         adapter.playingIndex = index
 
@@ -315,6 +341,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+    private companion object {
+        const val LOG_TAG = "SafeStream"
+    }
 }
 
 private val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)

@@ -153,9 +153,17 @@ object VideoScannerScript {
       // 站点常有懒加载，需要观察 DOM 变化后重扫
       try {
         var timer = null;
+        // 防抖要够长：广告位和懒加载会让 DOM 持续变动，间隔太短会疯狂重复上报，
+        // 上层就得不停重建播放列表（表现为画面闪烁、列表跳动）。
+        var lastSent = 0;
         var obs = new MutationObserver(function () {
           if (timer) clearTimeout(timer);
-          timer = setTimeout(merge, 800);
+          timer = setTimeout(function () {
+            var now = Date.now();
+            if (now - lastSent < 5000) return;   // 最短 5 秒上报一次
+            lastSent = now;
+            merge();
+          }, 1500);
         });
         obs.observe(document.documentElement, { childList: true, subtree: true });
       } catch (e) {}

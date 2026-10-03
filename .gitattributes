@@ -1,0 +1,13 @@
+# gradlew 是 shell 脚本，被 CRLF 弄坏后在 Linux/macOS 上无法执行
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows 上 checkout 保持 CRLF，避免 git 反复报"行尾转换"
+*.bat text eol=crlf
+*.kt text
+*.kts text
+*.xml text
+*.md text
+
+# 源码一律按文本处理，禁止 CRLF/LF 差异污染 diff
+* text=auto

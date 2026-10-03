@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.os.Message
@@ -75,6 +76,9 @@ class WebHostActivity : ComponentActivity() {
         hardenWebView(webView)
         attachWebMessageListener(webView)
         webView.webViewClient = SafeWebViewClient()
+        // 这四个加固回调（权限/弹窗/文件选择/定位）都挂在 WebChromeClient 上，
+        // 不是 WebViewClient。漏掉它等于四条安全契约全是空话。
+        webView.webChromeClient = SafeWebChromeClient()
         webView.setDownloadListener { _, _, _, _, _ ->
             // 安全契约 10：不下载任何东西
             reportEvent("已阻止下载")
@@ -116,10 +120,9 @@ class WebHostActivity : ComponentActivity() {
         wv.settings.useWideViewPort = true
         wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE  // 退出即不留缓存
 
-        // 安全契约 13：开启 Safe Browsing，Release 关闭远程调试
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
-            WebViewCompat.enableSafeBrowsing(this, null)
-        }
+        // 安全契约 13：Safe Browsing 由 AndroidManifest 的
+        // android.webkit.WebView.EnableSafeBrowsing meta-data 开启（WebViewCompat 没有这个 API）；
+        // Release 包关闭远程调试。
         if (!isDebuggable()) {
             WebView.setWebContentsDebuggingEnabled(false)
         }
@@ -318,37 +321,7 @@ class WebHostActivity : ComponentActivity() {
             injectScanner()
         }
 
-        // 安全契约 7：权限一律拒绝
-        override fun onPermissionRequest(request: PermissionRequest?) {
-            request?.deny()
-        }
-
-        override fun onGeolocationPermissionsShowPrompt(
-            origin: String?,
-            callback: GeolocationPermissions.Callback?,
-        ) {
-            callback?.invoke(origin, false, false)
-        }
-
-        // 安全契约 9：不提供文件选择器，页面无法上传本地文件
-        override fun onShowFileChooser(
-            webView: WebView?,
-            filePathCallback: ValueCallback<Array<Uri>>?,
-            fileChooserParams: FileChooserParams?,
-        ): Boolean {
-            filePathCallback?.onReceiveValue(null)
-            return true
-        }
-
-        // 安全契约 8：不创建新窗口
-        override fun onCreateWindow(
-            view: WebView?,
-            isDialog: Boolean,
-            isUserGesture: Boolean,
-            resultMsg: Message?,
-        ): Boolean = false
-
-        override fun onRenderProcessGone(view: WebView?, detail: android.view.RenderProcessGoneDetail?): Boolean {
+        override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
             // 渲染进程崩溃（恶意页面常见手法）时销毁整个沙箱，而不是复用可能已损坏的状态
             reportEvent("页面渲染进程已崩溃，沙箱已终止")
             finish()
@@ -363,6 +336,54 @@ class WebHostActivity : ComponentActivity() {
             // 证书错误一律中断，不给"继续"选项
             handler?.cancel()
             reportEvent("证书校验失败，已停止加载")
+        }
+    }
+
+    /**
+     * 页面能力请求的守门人。
+     *
+     * WebChromeClient 才是这些回调的宿主 —— WebViewClient 上重写它们不会有任何效果。
+     * 安全契约 7 / 8 / 9 全靠这个类落实。
+     */
+    private inner class SafeWebChromeClient : WebChromeClient() {
+
+        // 安全契约 7：网页请求的摄像头/麦克风/传感器一律拒绝
+        override fun onPermissionRequest(request: PermissionRequest?) {
+            request?.deny()
+            reportEvent("已拒绝页面的设备权限请求")
+        }
+
+        override fun onPermissionRequestCanceled(request: PermissionRequest?) {
+            request?.deny()
+        }
+
+        override fun onGeolocationPermissionsShowPrompt(
+            origin: String?,
+            callback: GeolocationPermissions.Callback?,
+        ) {
+            callback?.invoke(origin, false, false)
+        }
+
+        // 安全契约 9：不提供文件选择器，页面无法用"上传"诱导你交出本地文件
+        override fun onShowFileChooser(
+            view: WebView?,
+            filePathCallback: ValueCallback<Array<Uri>>?,
+            fileChooserParams: FileChooserParams?,
+        ): Boolean {
+            filePathCallback?.onReceiveValue(null)
+            reportEvent("已阻止页面的文件选择请求")
+            return true
+        }
+
+        // 安全契约 8：不创建新窗口，堵住无痕弹窗与广告劫持
+        override fun onCreateWindow(
+            view: WebView?,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: Message?,
+        ): Boolean {
+            reportEvent("已阻止页面弹窗")
+            return false
         }
     }
 }

@@ -41,7 +41,12 @@
 10. 禁止下载：`DownloadListener` 一律 `abort()`，不下 APK、不下 zip。
 11. 禁止跳外部 App：`shouldOverrideUrlLoading` 中任何 `market://`、`intent://`、自定义 scheme 全部拦截。
 12. 广告/跟踪/挖矿域名在 `shouldInterceptRequest` 层按域名与后缀黑名单拦截（`ads.`、`doubleclick`、`googlesyndication`、`adservice`、`analytics`、`/ads/`、`/pagead/` 等），并有可开关的白名单配置。
-13. 开启 `WebSettings.safeBrowsingEnabled=true`，Release 包 `setWebContentsDebuggingEnabled(false)`。
+13. 开启 WebView Safe Browsing（**只能**用 `AndroidManifest.xml` 里的
+    `android.webkit.WebView.EnableSafeBrowsing` meta-data，不存在对应的 API 或 WebSettings 开关），
+    Release 包 `setWebContentsDebuggingEnabled(false)`。
+13b. 页面能力类回调（`onPermissionRequest`、`onCreateWindow`、`onShowFileChooser`、
+    `onGeolocationPermissionsShowPrompt`）必须挂在 **`WebChromeClient`** 上。
+    它们在 `WebViewClient` 上不存在，重写了不会有任何效果 —— 这是本项目实测踩过的坑。
 14. 沙箱退出 / 页面关闭时：`CookieManager.removeAllCookies`、`WebStorage.deleteAllData`、`clearCache(true)`、`clearHistory()`、`clearFormData()`。
 15. Release 包 `android:allowBackup="false"`、`android:usesCleartextTraffic="false"`、无 `android:debuggable`。
 16. URL 输入做长度与字符校验，拒绝 `javascript:` 等注入型 scheme。

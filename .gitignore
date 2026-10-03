@@ -1,14 +1,16 @@
-*.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+# 注意：这里用 build/ 而不是 /build/。单斜杠只匹配仓库根目录，
+# 早期版本用 /build 导致 app/build 下几千个构建产物被误纳入版本控制。
+build/
+.gradle/
 local.properties
+**/local.properties
+.idea/
+*.iml
 *.apk
 *.aab
 *.keystore
-!debug.keystore
+*.hprof
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/

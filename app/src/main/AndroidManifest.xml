@@ -40,7 +40,13 @@
             android:process=":sandbox"
             android:theme="@style/Theme.SafeStream.Sandbox" />
 
-        <!-- 仅 PiP 需要；复用同一个 activity，不新增权限 -->
+        <!--
+          WebView 的 Safe Browsing 只能通过这个 meta-data 开启，没有对应的 API 或
+          WebSettings 开关（安全契约 13）。作用：已知恶意站点在请求前被拦下并展示警告页。
+        -->
+        <meta-data
+            android:name="android.webkit.WebView.EnableSafeBrowsing"
+            android:value="true" />
     </application>
 
 </manifest>

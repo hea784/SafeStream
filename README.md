@@ -12,9 +12,13 @@ Android WebView 和系统浏览器共用同一个渲染内核，没有任何第�
 SafeStream 的做法是**最小权限 + 无桥接 + 可观测**：不给页面任何原生能力、不给它任何本地访问、
 把它关在一个独立进程里、退出就擦干净。声称绝对安全的实现都是不可信的。
 
-**二、仓库代码未经编译验证。**
-创建这个仓库的机器上没有 JDK / Android SDK / Gradle，因此没有产出过 APK。
-`assembleDebug` 能否通过需要你在本地跑一次——这是已知状态，不是我推测。
+**二、编译状态：debug 与 release 均已实测通过。**
+在 Windows 11 + Temurin JDK 17.0.20.1 + Android SDK 35 + Gradle 8.13 下，
+`assembleDebug` 与 `assembleRelease`（含 R8 混淆、资源压缩、`lintVitalRelease`）均为
+`BUILD SUCCESSFUL`，debug APK 9.36 MB。
+
+**运行状态：未在真机或模拟器上启动过。** 仓库里有可用的 android-35 x86_64 系统镜像，
+可以建 AVD 做运行时验证，但尚未做。所以"能编译"不等于"功能已验证"。
 
 ## 架构
 
@@ -31,6 +35,16 @@ SafeStream 的做法是**最小权限 + 无桥接 + 可观测**：不给页面�
 
 页面在 `:sandbox` 进程里渲染，播放器在主进程。沙箱崩了播放器照跑；
 播放器崩了也不影响已经渲染的页面。两边只通过**显式 Intent 广播**说话，没有 AIDL、没有共享内存。
+
+### 一个实测踩到的坑
+
+`onPermissionRequest` / `onCreateWindow` / `onShowFileChooser` /
+`onGeolocationPermissionsShowPrompt` **不在 `WebViewClient` 上，而在 `WebChromeClient` 上**。
+把它们写进 `WebViewClient` 能通过"看起来对"的直觉，但运行时完全不生效 ——
+四条安全契约会静默变成空话。编译器最终也会报 `overrides nothing`。
+
+另外 WebView 的 Safe Browsing **没有 API 也没有 WebSettings 开关**，
+只能用 `AndroidManifest.xml` 里的 `android.webkit.WebView.EnableSafeBrowsing` meta-data 开启。
 
 ## 安全设计（对应 PROMPT.md 第 4 节）
 
@@ -81,11 +95,19 @@ SafeStream 的做法是**最小权限 + 无桥接 + 可观测**：不给页面�
 ```bash
 git clone https://github.com/<你的账号>/SafeStream.git
 cd SafeStream
-gradle wrapper          # 仓库只带了 wrapper.properties，jar 需先生成
 ./gradlew assembleDebug
 ```
 
-Gradle 8.9 / AGP 8.7.3 / Kotlin 2.0.21 / compileSdk 35 / minSdk 24。
+需要 JDK 17 + Android SDK 35。Gradle 8.13（wrapper 已包含）/ AGP 8.7.3 /
+Kotlin 2.0.21 / compileSdk 35 / minSdk 24。
+
+Windows 上的本地环境变量（不写入仓库，按你的实际路径调整）：
+
+```powershell
+$env:JAVA_HOME="D:\dev-tools\sdks\jdk-17.0.20.1+1"
+$env:ANDROID_HOME="D:\dev-tools\sdks\android-sdk"
+$env:GRADLE_USER_HOME="D:\dev-tools\caches\gradle"
+```
 
 ## 许可
 

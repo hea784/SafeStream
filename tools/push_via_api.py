@@ -110,15 +110,37 @@ def main():
         print("注意：远端 HEAD " + base[:8] + " 不在本地历史中（github.com 被阻断无法 fetch）")
         print("      本次以远端 HEAD 为父提交推送；推送后本地与远端历史分叉，")
         print("      网络恢复后需要 git fetch --rebase 或 git reset --hard origin/main 归一。")
+    # GitHub 的 create-tree 在给了 base_tree 时是"合并"语义：没在 tree 数组里
+    # 列出的路径会从 base_tree 原样保留。也就是说只上传 ls-tree 的结果，
+    # 删掉的文件永远不会消失 —— 实测踩过：清理提交推上去后远端文件数没变。
+    # 要删除必须显式给 sha: null。
+    base_entries = call("GET", "/git/trees/" + base + "?recursive=1")["tree"]
+    base_paths = {e["path"] for e in base_entries if e["type"] == "blob"}
+    head_paths = {p for _m, _s, p in entries}
+    removed = sorted(base_paths - head_paths)
+    if removed:
+        print("删除 " + str(len(removed)) + " 个远端已存在但本地已删的路径:")
+        for p in removed:
+            print("   -", p)
+
+    tree_entries = [{"path": p, "mode": MODE_OVERRIDE.get(p, m), "type": "blob", "sha": s}
+                    for m, s, p in entries]
+    tree_entries += [{"path": p, "mode": "100644", "type": "blob", "sha": None}
+                     for p in removed]
+
     tree_body = {
         "base_tree": base,
-        "tree": [{"path": p, "mode": MODE_OVERRIDE.get(p, m), "type": "blob", "sha": s}
-                 for m, s, p in entries],
+        "tree": tree_entries,
     }
     tree = call("POST", "/git/trees", tree_body)
     # 有 mode override 时 tree sha 本就与本地不同，改用逐文件内容校验
     expected = dict((p, s) for _m, s, p in entries)
-    for node in call("GET", "/git/trees/" + tree["sha"] + "?recursive=1")["tree"]:
+    remote_tree = call("GET", "/git/trees/" + tree["sha"] + "?recursive=1")["tree"]
+    remote_paths = {e["path"] for e in remote_tree if e["type"] == "blob"}
+    still_there = sorted(remote_paths & set(removed))
+    if still_there:
+        raise SystemExit("删除未生效，远端仍存在: " + ", ".join(still_there))
+    for node in remote_tree:
         if node["type"] == "blob" and node["path"] in expected:
             if node["sha"] != expected[node["path"]]:
                 raise SystemExit("内容不一致，已中止：" + node["path"])

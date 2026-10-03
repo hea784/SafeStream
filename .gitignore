@@ -16,3 +16,6 @@ captures/
 .cxx/
 # 测试夹具由 tools/make_test_fixture.py 生成，不入库
 tools/testfixture/
+# net_diag 的输出是对本机网络的快照，不入库
+vpn_off.txt
+vpn_on.txt

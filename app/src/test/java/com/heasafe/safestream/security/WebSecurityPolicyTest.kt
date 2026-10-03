@@ -78,4 +78,32 @@ class WebSecurityPolicyTest {
         val m3u8 = "https://yd-hls.tktjpm.cn/videos5/a/a.m3u8"
         assertFalse("视频清单不能被拦", WebSecurityPolicy.shouldBlockRequest(m3u8))
     }
+
+    // 合并架构时这条被架空了：isInsecureAllowed() 变成没有调用方的死代码，
+    // 结果"只放行用户确认过的明文 host"这条规则整体失效。
+    @Test
+    fun `未确认的明文 host 被拦下`() {
+        val confirmed = "example.com"
+        assertTrue(
+            "未确认的 http 必须拦",
+            WebSecurityPolicy.shouldBlockCleartext("http://evil.test/x.js", confirmed),
+        )
+    }
+
+    @Test
+    fun `用户确认过的 host 与其子域放行明文`() {
+        val confirmed = "example.com"
+        assertFalse(
+            WebSecurityPolicy.shouldBlockCleartext("http://example.com/x.js", confirmed),
+        )
+        assertFalse(
+            WebSecurityPolicy.shouldBlockCleartext("http://cdn.example.com/x.js", confirmed),
+        )
+    }
+
+    @Test
+    fun `没有任何确认时明文一律被拦`() {
+        assertTrue(WebSecurityPolicy.shouldBlockCleartext("http://any.test/x", null))
+        assertFalse(WebSecurityPolicy.shouldBlockCleartext("https://any.test/x", null))
+    }
 }

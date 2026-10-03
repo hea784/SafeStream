@@ -1,107 +1,52 @@
 package com.heasafe.safestream.ui
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.heasafe.safestream.R
-import com.heasafe.safestream.core.Bridge
 import com.heasafe.safestream.core.UrlGuard
 import com.heasafe.safestream.data.HistoryStore
 import com.heasafe.safestream.databinding.ActivityMainBinding
 import com.heasafe.safestream.model.VideoItem
-import com.heasafe.safestream.sandbox.WebHostActivity
+import com.heasafe.safestream.sandbox.WebSandbox
 import org.json.JSONArray
 
-/**
- * 主界面。地址栏 + 播放列表 + 原生播放器。
- *
- * 本进程从不渲染远端页面，只接收沙箱上报的视频列表。
- */
+// 唯一界面：顶部搜索栏 + 播放页/浏览页 + 底部导航。
+// 浏览页以前是另一个跑在 :sandbox 进程的 Activity，靠 Intent 广播来回传数据；
+// 现在 WebView 与播放器同处一个界面，点网页里的视频直接切到播放页，
+// 不再有"两个界面连不上"的问题，也不再需要那套广播协议。
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var history: HistoryStore
     private lateinit var adapter: PlaylistAdapter
+    private lateinit var sandbox: WebSandbox
+    private lateinit var player: androidx.media3.exoplayer.ExoPlayer
 
-    private var player: ExoPlayer? = null
     private var videos: List<VideoItem> = emptyList()
     private var currentIndex = RecyclerView.NO_POSITION
 
-    /**
-     * 当前已交给播放器的地址。
-     *
-     * 扫描脚本的 MutationObserver 在广告/懒加载频繁改动的页面上会持续上报，
-     * 每次都重建播放列表会让 ExoPlayer 反复 setMediaItem + prepare，画面不停闪。
-     * 用这个字段做去重：同地址不重启。
-     */
+    // 当前已交给播放器的地址，用于避免重复重建 MediaItem（会造成画面闪烁）
     private var playingUrl: String? = null
+
+    private var lastSandboxUrl: String? = null
+    private var insecureHostAllowed: String? = null
+    private var pendingEpisode: VideoItem? = null
     private var sandboxRunning = false
     private var filterEnabled = true
     private var blockedCount = 0
 
-    /** 最近一次交给沙箱的地址，"浏览"标签复用它。 */
-    private var lastSandboxUrl: String? = null
-
-    /** 用户选中的剧集：页面加载完、媒体被发现后自动播它。 */
-    private var pendingEpisode: VideoItem? = null
-
-    /** 正在提交的地址：用于去重，避免同一次提交被触发两遍把播放列表清空。 */
+    // 同一地址的重复提交会清空播放列表，这里做防抖
     private var submittingUrl: String? = null
-
-    /** 上次提交的时刻，用于防抖。 */
-    private var lastSubmitAt: Long = 0L
-
-    private val sandboxReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Bridge.ACTION_VIDEOS_FOUND ->
-                    intent.getStringExtra(Bridge.EXTRA_VIDEO_JSON)?.let { json ->
-                        // 沙箱里点了视频：先播它，再把沙箱收掉让本界面回到前台
-                        if (intent.getStringExtra(Bridge.EXTRA_MESSAGE) == "PLAY_NOW") {
-                            playNow(json)
-                        } else {
-                            onVideosFound(json)
-                        }
-                    }
-
-                Bridge.ACTION_SECURITY_EVENT -> onSecurityEvent(
-                    intent.getStringExtra(Bridge.EXTRA_MESSAGE).orEmpty(),
-                )
-
-                Bridge.ACTION_NAVIGATE -> {
-                    // 沙箱搜索栏回车：走和主界面一样的校验流程，不在沙箱里自行放行
-                    val target = intent.getStringExtra(Bridge.EXTRA_URL).orEmpty()
-                    // 沙箱已经在显示这个地址就别再走一遍流程
-                    if (target != lastSandboxUrl) {
-                        binding.urlInput.setText(target)
-                        submitUrl()
-                    }
-                }
-
-                Bridge.ACTION_PLAY_FOUND -> playFirstDiscovered()
-
-                Bridge.ACTION_EPISODES_FOUND ->
-                    intent.getStringExtra(Bridge.EXTRA_VIDEO_JSON)?.let(::onEpisodesFound)
-            }
-        }
-    }
+    private var lastSubmitAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,7 +57,28 @@ class MainActivity : AppCompatActivity() {
         adapter = PlaylistAdapter { index, item -> playAt(index, item) }
         binding.playlistList.adapter = adapter
 
-        // 没有"加载"按钮：搜索栏回车即提交，少一次点击
+        sandbox = WebSandbox(
+            context = this,
+            onVideosFound = ::onVideosFound,
+            onEpisodesFound = ::onEpisodesFound,
+            onSecurityEvent = ::onSecurityEvent,
+            onTitle = { title ->
+                binding.statusLine.text =
+                    if (title.isBlank()) getString(R.string.status_idle) else title
+            },
+        )
+        sandbox.filterEnabled = filterEnabled
+        sandbox.onFatal = { binding.statusLine.text = getString(R.string.render_gone) }
+        // 用沙箱自己的 WebView 替换布局里的占位 ViewView
+        (binding.browsePage.parent as? ViewGroup)?.removeView(binding.browsePage)
+        binding.contentContainer.addView(
+            sandbox.view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
         binding.urlInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH ||
                 actionId == EditorInfo.IME_ACTION_GO
@@ -120,13 +86,12 @@ class MainActivity : AppCompatActivity() {
         }
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
-        // UI 重构时这个监听被漏掉了，按钮成 dead UI。接回去。
         binding.speedButton.setOnClickListener { cycleSpeed() }
 
         binding.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.nav_play -> true
-                R.id.nav_browse -> { openBrowser(); false }
+                R.id.nav_play -> { showPage(browse = false); true }
+                R.id.nav_browse -> { showPage(browse = true); true }
                 else -> false
             }
         }
@@ -134,170 +99,142 @@ class MainActivity : AppCompatActivity() {
 
         updateShieldUi()
         updatePlaylistUi()
-        registerSandboxReceiver()
+        binding.statusLine.text = getString(R.string.status_idle)
 
-        player = ExoPlayer.Builder(this).build().also {
+        player = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
             binding.playerView.player = it
             it.addListener(playerListener)
         }
     }
 
-    override fun onStop() {
-        super.onStop()
-        // 播放进度落盘，下次从断点继续
-        val p = player ?: return
-        val item = videos.getOrNull(currentIndex)
-        if (item != null && p.isPlaying) {
-            history.saveProgress(item.url, p.currentPosition, p.duration)
+    /** 切换播放页 / 浏览页。WebView 一直活着，切回来时状态不丢。 */
+    private fun showPage(browse: Boolean) {
+        binding.playPage.visibility = if (browse) View.GONE else View.VISIBLE
+        sandbox.view.visibility = if (browse) View.VISIBLE else View.GONE
+        if (browse) {
+            val url = lastSandboxUrl
+            if (url.isNullOrBlank()) {
+                toast(getString(R.string.browse_need_url))
+                binding.bottomNav.selectedItemId = R.id.nav_play
+            } else if (!sandboxRunning) {
+                openSandbox()
+            }
         }
     }
 
-    override fun onDestroy() {
-        runCatching { unregisterReceiver(sandboxReceiver) }
-        binding.playerView.player = null
-        player?.release()
-        player = null
-        super.onDestroy()
-    }
-
-    /** 地址栏 -> UrlGuard -> 沙箱。 */
     private fun submitUrl() {
-        val raw = binding.urlInput.text?.toString().orEmpty().trim()
+        val raw = binding.urlInput.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
 
-        // 同一地址的重复提交直接忽略。
-        // 实测踩过：沙箱搜索栏回车会广播 NAVIGATE 回来，不拦截就会二次提交，
-        // 而 startSandbox 会清空播放列表 —— 表现为选集刚填好又变空。
         val now = SystemClock.elapsedRealtime()
         if (submittingUrl == raw && now - lastSubmitAt < SUBMIT_DEBOUNCE_MS) return
         submittingUrl = raw
         lastSubmitAt = now
 
-        // 输入的如果不是网址，就当搜索词处理，省得用户自己拼搜索引擎
         if (looksLikeKeyword(raw)) {
-            startSandbox(SEARCH_PREFIX + java.net.URLEncoder.encode(raw, "UTF-8"))
+            loadUrl(SEARCH_PREFIX + java.net.URLEncoder.encode(raw, "UTF-8"), null)
             return
         }
-
         when (val verdict = UrlGuard.inspect(raw)) {
-            is UrlGuard.Result.Rejected ->
-                toast(verdict.reason)
-
-            is UrlGuard.Result.Secure -> startSandbox(verdict.normalized)
-
+            is UrlGuard.Result.Rejected -> toast(verdict.reason)
+            is UrlGuard.Result.Secure -> loadUrl(verdict.normalized, null)
             is UrlGuard.Result.Insecure -> MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.warn_insecure_title)
                 .setMessage(getString(R.string.warn_insecure_body, verdict.normalized))
                 .setNegativeButton(R.string.cancel, null)
                 .setPositiveButton(R.string.warn_insecure_ok) { _, _ ->
-                    // 把用户确认的 host 传给沙箱：只有它被允许走明文
-                    startSandbox(verdict.normalized, java.net.URI(verdict.normalized).host)
+                    loadUrl(verdict.normalized, java.net.URI(verdict.normalized).host)
                 }
                 .show()
         }
     }
 
-    /** 像域名/带 scheme 的算网址，否则当搜索词。 */
+    /** 没有 scheme 也没有点号的按搜索词处理。 */
     private fun looksLikeKeyword(input: String): Boolean {
         if (input.contains("://")) return false
         if (input.contains(' ')) return true
-        // 有空格或没有点号，就是搜索词；有扩展名样式则按网址处理
-        val looksLikeHost = input.substringBefore('/').contains('.')
-        return !looksLikeHost
+        return !input.substringBefore('/').contains('.')
     }
 
-    /** 浏览标签：把沙箱切到前台。网页必须在 :sandbox 进程，所以是另一个 Activity。 */
-    private fun openBrowser() {
-        val url = binding.urlInput.text?.toString()?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: lastSandboxUrl
-            ?: return
-        startActivity(Intent(this, WebHostActivity::class.java)
-            .putExtra(Bridge.EXTRA_URL, url)
-            .putExtra(Bridge.EXTRA_ENABLED, filterEnabled))
-    }
-
-    private fun startSandbox(url: String) {
-        startSandbox(url, insecureHostAllowed = null)
-    }
-
-    private fun startSandbox(url: String, insecureHostAllowed: String?) {
-        stopSandbox()
-        blockedCount = 0
+    private fun loadUrl(url: String, insecureHost: String?) {
+        pendingEpisode = null
         playingUrl = null
-        lastSandboxUrl = url
+        blockedCount = 0
         videos = emptyList()
         adapter.submitList(emptyList())
-        currentIndex = RecyclerView.NO_POSITION
         updatePlaylistUi()
 
-        val intent = Intent(this, WebHostActivity::class.java)
-            .putExtra(Bridge.EXTRA_URL, url)
-            .putExtra(Bridge.EXTRA_ENABLED, filterEnabled)
-            .putExtra(Bridge.EXTRA_INSECURE_HOST, insecureHostAllowed)
-        startActivity(intent)
-        sandboxRunning = true
+        insecureHostAllowed = insecureHost
+        lastSandboxUrl = url
         binding.urlInput.setText(url)
         binding.urlInput.setSelection(url.length)
+        sandbox.filterEnabled = filterEnabled
+        sandbox.load(url, insecureHost)
+        sandboxRunning = true
+        showPage(browse = true)
+        binding.bottomNav.selectedItemId = R.id.nav_browse
+    }
+
+    private fun openSandbox() {
+        val url = lastSandboxUrl ?: return
+        sandbox.load(url, insecureHostAllowed)
+        sandboxRunning = true
+    }
+
+    private fun onSecurityEvent(message: String) {
+        if (message.startsWith("已拦截")) blockedCount++
+        binding.statusLine.text = buildString {
+            append(if (sandboxRunning) "沙箱运行中" else "沙箱已停止")
+            if (blockedCount > 0) append(" · 已拦截 $blockedCount 个跟踪请求")
+            append(" · ")
+            append(message)
+        }
+    }
+
+    private fun toggleFilter() {
+        filterEnabled = !filterEnabled
+        sandbox.filterEnabled = filterEnabled
         updateShieldUi()
+        toast(if (filterEnabled) "已开启广告与跟踪拦截" else "已关闭拦截（不推荐）")
     }
 
-    private fun stopSandbox() {
-        if (!sandboxRunning) return
-        sendControl(Bridge.ACTION_PURGE)
-        sandboxRunning = false
-    }
-
-    /** 长按防护按钮 = 清理全部本地数据并停沙箱。 */
     private fun purgeEverything() {
-        sendControl(Bridge.ACTION_PURGE)
-        history.clearAll()
+        sandbox.purge()
+        sandboxRunning = false
         blockedCount = 0
         videos = emptyList()
         adapter.submitList(emptyList())
-        currentIndex = RecyclerView.NO_POSITION
-        sandboxRunning = false
+        history.clearAll()
+        playingUrl = null
         binding.statusLine.text = getString(R.string.sandbox_cleaned)
         updatePlaylistUi()
         toast(getString(R.string.sandbox_cleaned))
     }
 
-    private fun toggleFilter() {
-        filterEnabled = !filterEnabled
-        sendControl(Bridge.ACTION_SET_FILTER) {
-            putExtra(Bridge.EXTRA_ENABLED, filterEnabled)
-        }
-        sendControl(Bridge.ACTION_RESCAN)
-        updateShieldUi()
-        toast(if (filterEnabled) "已开启广告与跟踪拦截" else "已关闭拦截（不推荐）")
-    }
-
     private fun onVideosFound(json: String) {
+        // 用户在网页里点了 blob 流：播本页已发现的媒体
+        if (json == WebSandbox.PLAY_FOUND_MARKER) {
+            playFirstDiscovered()
+            return
+        }
         val arr = JSONArray(json)
         val parsed = ArrayList<VideoItem>(arr.length())
         for (i in 0 until arr.length()) {
-            arr.optString(i).takeIf { it.isNotBlank() }?.let { VideoItem.fromJson(it) }
-                ?.let(parsed::add)
+            VideoItem.fromJson(arr.optString(i))?.let(parsed::add)
         }
         if (parsed.isEmpty()) return
 
-        // 按 URL 合并而不是整体替换：扫描脚本会反复上报同一批视频，
-        // 整体替换会把播放列表清空又填回，用户看到的是条目不停闪。
+        // 按 URL 合并：扫描会反复上报同一批，整体替换会让列表不停闪
         val merged = LinkedHashMap<String, VideoItem>()
         videos.forEach { merged[it.url] = it }
         parsed.forEach { merged.putIfAbsent(it.url, it) }
         val next = merged.values.toList()
         if (next == videos) return
-
         videos = next
         adapter.submitList(next)
         updatePlaylistUi()
 
-        // 只有一个视频时直接开始，省一次点击；已经在播同一个就不重启
-        val only = next.singleOrNull()
-        if (only != null && only.url != playingUrl) playAt(0, only)
-
-        // 选集场景：用户点了第 N 集，现在该页的媒体到手了，自动播它
+        // 选集场景：用户点了第 N 集，该页媒体到手后自动播
         val waiting = pendingEpisode
         if (waiting != null) {
             val media = next.firstOrNull { !it.isEpisode && it.isPlayable }
@@ -308,35 +245,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 沙箱里点了视频：不进列表，直接播。 */
-    private fun playNow(json: String) {
-        val arr = JSONArray(json)
-        for (i in 0 until arr.length()) {
-            val item = VideoItem.fromJson(arr.optString(i)) ?: continue
-            videos = listOf(item)
-            adapter.submitList(videos)
-            updatePlaylistUi()
-            playAt(0, item)
-            return
-        }
-    }
-
-    /** 用户在网页里点了 blob 流视频：播本页已经发现到的第一个可播媒体。 */
-    private fun playFirstDiscovered() {
-        val target = videos.firstOrNull { it.isPlayable }
-        if (target == null) {
-            toast(getString(R.string.no_playable_source))
-            return
-        }
-        playAt(videos.indexOf(target), target)
-    }
-
-    /**
-     * 选集并入播放列表。
-     *
-     * 选集条目排在媒体条目前面：用户想选的是"第几集"，不是页面里恰好抓到的那一个
-     * m3u8。同一页反复上报时按 URL 去重。
-     */
     private fun onEpisodesFound(json: String) {
         val arr = JSONArray(json)
         val parsed = ArrayList<VideoItem>(arr.length())
@@ -354,11 +262,17 @@ class MainActivity : AppCompatActivity() {
         updatePlaylistUi()
     }
 
-    /**
-     * 选中某一集：加载该集页面，等它暴露媒体地址后自动播。
-     *
-     * 若选中的正好是当前页（常见于第 1 集），不重复加载，直接播已发现的媒体。
-     */
+    private fun playFirstDiscovered() {
+        val target = videos.firstOrNull { !it.isEpisode && it.isPlayable }
+        if (target == null) {
+            toast(getString(R.string.no_playable_source))
+            return
+        }
+        showPage(browse = false)
+        binding.bottomNav.selectedItemId = R.id.nav_play
+        playAt(videos.indexOf(target), target)
+    }
+
     private fun playEpisode(item: VideoItem) {
         if (item.url == lastSandboxUrl) {
             val found = videos.firstOrNull { !it.isEpisode && it.isPlayable }
@@ -368,20 +282,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
         pendingEpisode = item
-        playingUrl = null
         toast("正在加载第 ${item.episodeNo} 集")
-        startSandbox(item.url)
-    }
-
-    private fun onSecurityEvent(message: String) {
-        if (message == "PURGED") return
-        if (message.startsWith("已拦截")) blockedCount++
-        binding.statusLine.text = buildString {
-            append(if (sandboxRunning) "沙箱运行中" else "沙箱已停止")
-            if (blockedCount > 0) append(" · 已拦截 $blockedCount 个跟踪请求")
-            append(" · ")
-            append(message)
-        }
+        loadUrl(item.url, insecureHostAllowed)
     }
 
     private fun playAt(index: Int, item: VideoItem) {
@@ -393,73 +295,62 @@ class MainActivity : AppCompatActivity() {
             toast(getString(R.string.no_playable_source))
             return
         }
-        // 同地址已在播放/加载中就不重建 MediaItem，否则画面会反复重置闪烁
+        // 同地址已在播放/加载中就不重建 MediaItem，否则画面反复重置闪烁
         if (item.url == playingUrl) return
-
         playingUrl = item.url
         currentIndex = index
         adapter.playingIndex = index
 
-        val mediaItem = MediaItem.Builder()
+        val mediaItem = androidx.media3.common.MediaItem.Builder()
             .setUri(item.url)
             .setMediaId(item.url)
             .setMimeType(
                 when {
-                    item.url.contains(".m3u8") -> MimeTypes.APPLICATION_M3U8
-                    item.url.contains(".mpd") -> MimeTypes.APPLICATION_MPD
+                    item.url.contains(".m3u8") ->
+                        androidx.media3.common.MimeTypes.APPLICATION_M3U8
+                    item.url.contains(".mpd") ->
+                        androidx.media3.common.MimeTypes.APPLICATION_MPD
                     item.mimeType.isNotBlank() -> item.mimeType
                     else -> null
                 },
             )
             .build()
 
-        player?.apply {
-            setMediaItem(mediaItem)
-            val resumeAt = history.readProgress(item.url)
-            if (resumeAt > 3_000) {
-                seekTo(resumeAt)
-                toast(getString(R.string.resume_toast, formatMs(resumeAt)))
-            }
-            prepare()
-            playWhenReady = true
+        player.setMediaItem(mediaItem)
+        val resumeAt = history.readProgress(item.url)
+        if (resumeAt > 3_000) {
+            player.seekTo(resumeAt)
+            toast(getString(R.string.resume_toast, formatMs(resumeAt)))
         }
-        binding.playerView.requestFocus()
+        player.prepare()
+        player.playWhenReady = true
     }
 
-    private val playerListener = object : Player.Listener {
-        override fun onPlayerError(error: PlaybackException) {
+    private val playerListener = object : androidx.media3.common.Player.Listener {
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             toast("播放失败：${error.errorCodeName}")
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            val p = player ?: return
+            if (!isPlaying) return
             val item = videos.getOrNull(currentIndex) ?: return
-            if (isPlaying) {
-                history.saveProgress(item.url, p.currentPosition, p.duration)
-            }
+            history.saveProgress(item.url, player.currentPosition, player.duration)
         }
     }
 
-    private fun sendControl(action: String, build: Intent.() -> Unit = {}) {
-        if (!sandboxRunning) return
-        sendBroadcast(
-            Intent(action)
-                .setPackage(packageName)
-                .putExtra(Bridge.EXTRA_ENABLED, filterEnabled)
-                .apply(build),
-        )
+    private fun cycleSpeed() {
+        val idx = SPEEDS.indexOfFirst { it == player.playbackParameters.speed }
+            .takeIf { it >= 0 } ?: 0
+        val next = SPEEDS[(idx + 1) % SPEEDS.size]
+        player.setPlaybackSpeed(next)
+        val label = formatSpeed(next)
+        binding.speedButton.text = label
+        toast(getString(R.string.speed_label, label))
     }
 
-    private fun registerSandboxReceiver() {
-        val filter = IntentFilter().apply {
-            Bridge.TO_MAIN_ACTIONS.forEach { addAction(it) }
-        }
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(sandboxReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            registerReceiver(sandboxReceiver, filter)
-        }
+    private fun formatSpeed(speed: Float): String {
+        val text = if (speed % 1f == 0f) speed.toInt().toString() else speed.toString()
+        return "${text}x"
     }
 
     private fun updateShieldUi() {
@@ -477,48 +368,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun updatePlaylistUi() {
         binding.listHeader.text = if (videos.isEmpty()) {
-            getString(R.string.playlist_title_found_none)
+            getString(R.string.playlist_section)
         } else {
             getString(R.string.playlist_title, videos.count { it.isPlayable })
         }
-        // 列表区域常驻，空状态用叠加文字提示，避免隐藏列表把标题挤到底部
         binding.emptyState.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
-        if (!sandboxRunning && binding.statusLine.text.isNullOrBlank()) {
-            binding.statusLine.text = getString(R.string.status_idle)
-        }
     }
 
-    private fun formatMs(ms: Long): String =
-        "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
-
-    /** 倍速循环：1.0 -> 1.25 -> 1.5 -> 2.0 -> 0.75 -> 1.0 */
-    private fun cycleSpeed() {
-        val p = player ?: return
-        val idx = SPEEDS.indexOfFirst { it == p.playbackParameters.speed }.takeIf { it >= 0 } ?: 0
-        val next = SPEEDS[(idx + 1) % SPEEDS.size]
-        p.setPlaybackSpeed(next)
-        binding.speedButton.text = formatSpeed(next)
-        toast(getString(R.string.speed_label, formatSpeed(next)))
-    }
-
-    /** 1.0 -> 1x，1.25 -> 1.25x。原来那串 replace 会输出 "1.25gx"，多一个 g。 */
-    private fun formatSpeed(speed: Float): String {
-        val text = if (speed % 1f == 0f) {
-            speed.toInt().toString()
-        } else {
-            speed.toString()
-        }
-        return "${text}x"
-    }
+    private fun formatMs(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
+    override fun onStop() {
+        super.onStop()
+        val item = videos.getOrNull(currentIndex) ?: return
+        if (player.isPlaying) {
+            history.saveProgress(item.url, player.currentPosition, player.duration)
+        }
+    }
+
+    override fun onDestroy() {
+        binding.playerView.player = null
+        player.release()
+        sandbox.destroy()
+        super.onDestroy()
+    }
+
     private companion object {
         const val SUBMIT_DEBOUNCE_MS = 2000L
-
-        /** 输入的不是网址时，按搜索词拼到这个前缀后交给沙箱。 */
         const val SEARCH_PREFIX = "https://www.bing.com/search?q="
+        val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }
-
-private val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)

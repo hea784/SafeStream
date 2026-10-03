@@ -9,7 +9,7 @@
     android:fitsSystemWindows="true"
     tools:context=".ui.MainActivity">
 
-    <!-- 顶部：搜索/地址栏。回车即提交，不需要额外的“加载”按钮 -->
+    <!-- 顶部：搜索栏。回车即提交，不需要额外的"加载"按钮 -->
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="0dp"
@@ -63,7 +63,6 @@
             app:tint="@color/ok" />
     </LinearLayout>
 
-    <!-- 诊断信息收进可展开的小条，不再常驻占用主界面 -->
     <TextView
         android:id="@+id/statusLine"
         android:layout_width="0dp"
@@ -80,76 +79,110 @@
         app:layout_constraintTop_toBottomOf="@id/topBar"
         tools:text="沙箱运行中 · 已拦截 5 个跟踪请求" />
 
-    <androidx.media3.ui.PlayerView
-        android:id="@+id/playerView"
+    <!-- 浏览页与播放页共用这一个容器，靠 visibility 切换 -->
+    <FrameLayout
+        android:id="@+id/contentContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="12dp"
-        android:layout_marginEnd="12dp"
-        android:background="@android:color/black"
-        app:layout_constraintDimensionRatio="H,16:9"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statusLine"
-        app:resize_mode="fit"
-        app:show_buffering="when_playing"
-        app:use_controller="true" />
-
-    <!-- 播放列表标题行：数量 + 倍速 -->
-    <TextView
-        android:id="@+id/listHeader"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="14dp"
-        android:text="@string/playlist_section"
-        android:textAppearance="@style/TextAppearance.SafeStream.Title"
-        app:layout_constraintEnd_toStartOf="@id/speedButton"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/playerView" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/speedButton"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
-        android:minWidth="56dp"
-        android:text="1.0x"
-        android:textColor="@color/brand"
-        app:layout_constraintBottom_toBottomOf="@id/listHeader"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/listHeader" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/playlistList"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:clipToPadding="false"
-        android:paddingTop="4dp"
-        android:paddingBottom="8dp"
-        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/listHeader"
-        tools:listitem="@layout/item_video" />
+        app:layout_constraintTop_toBottomOf="@id/statusLine">
 
-    <!-- 空状态只在真的没有内容时出现，不遮播放器 -->
-    <TextView
-        android:id="@+id/emptyState"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="32dp"
-        android:layout_marginEnd="32dp"
-        android:gravity="center"
-        android:text="@string/playlist_empty_hint"
-        android:textAppearance="@style/TextAppearance.SafeStream.Meta"
-        app:layout_constraintBottom_toBottomOf="@id/playlistList"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/playlistList" />
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:id="@+id/playPage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/playerView"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="@android:color/black"
+                app:layout_constraintDimensionRatio="H,16:9"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:resize_mode="fit"
+                app:show_buffering="when_playing"
+                app:use_controller="true" />
+
+            <LinearLayout
+                android:id="@+id/listHeaderRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="10dp"
+                android:paddingEnd="8dp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/playerView">
+
+                <TextView
+                    android:id="@+id/listHeader"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/playlist_section"
+                    android:textAppearance="@style/TextAppearance.SafeStream.Title" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/speedButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="56dp"
+                    android:text="1.0x"
+                    android:textColor="@color/brand" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:id="@+id/listContainer"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/listHeaderRow">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/playlistList"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp"
+                    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+                    tools:listitem="@layout/item_video" />
+
+                <TextView
+                    android:id="@+id/emptyState"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginStart="32dp"
+                    android:layout_marginEnd="32dp"
+                    android:gravity="center"
+                    android:text="@string/playlist_empty_hint"
+                    android:textAppearance="@style/TextAppearance.SafeStream.Meta" />
+            </FrameLayout>
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <WebView
+            android:id="@+id/browsePage"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/black"
+            android:visibility="gone"
+            tools:visibility="visible" />
+    </FrameLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView
         android:id="@+id/bottomNav"

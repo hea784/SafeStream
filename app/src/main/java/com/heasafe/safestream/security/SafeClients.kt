@@ -70,6 +70,14 @@ class SafeWebViewClient(
     /** 渲染进程崩溃时回调；宿主应销毁 WebView 而不是复用。 */
     var onRenderGone: (() -> Unit)? = null
 
+    /** 页面开始/结束时回调，宿主用它注入扫描脚本。 */
+    var onPageStart: (() -> Unit)? = null
+    var onPageDone: (() -> Unit)? = null
+
+    /** 用户在警告框里确认过的明文 host；null 表示不放行任何明文。 */
+    @Volatile
+    var insecureHostConfirmed: String? = null
+
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
         shouldOverrideUrlLoading(view, request?.url?.toString().orEmpty())
 
@@ -93,15 +101,21 @@ class SafeWebViewClient(
             onSecurityEvent("已拦截：" + Uri.parse(url).host)
             return emptyResponse()
         }
+        if (WebSecurityPolicy.shouldBlockCleartext(url, insecureHostConfirmed)) {
+            onSecurityEvent("已拦截明文请求：" + Uri.parse(url).host)
+            return emptyResponse()
+        }
         return null
     }
 
     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
         super.onPageStarted(view, url, favicon)
+        onPageStart?.invoke()
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {
         super.onPageFinished(view, url)
+        onPageDone?.invoke()
         onPageTitle(view?.title?.toString().orEmpty())
     }
 

@@ -30,16 +30,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 沙箱进程：只负责安全地渲染远端页面并上报发现的视频 -->
-        <activity
-            android:name=".sandbox.WebHostActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
-            android:excludeFromRecents="false"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:process=":sandbox"
-            android:theme="@style/Theme.SafeStream.Sandbox" />
-
         <!--
           WebView 的 Safe Browsing 只能通过这个 meta-data 开启，没有对应的 API 或
           WebSettings 开关（安全契约 13）。作用：已知恶意站点在请求前被拦下并展示警告页。

@@ -52,6 +52,24 @@ object WebSecurityPolicy {
     /** 广告、跟踪、挖矿、裸 IP 上报等。复用唯一一份黑名单判断。 */
     fun shouldBlockRequest(url: String): Boolean = TrackerBlocklist.isBlocked(url)
 
+    /**
+     * 明文请求是否应当拦下。
+     *
+     * 平台层 cleartextTrafficPermitted 必须为 true（否则对话框里点"仍要加载"
+     * 也没用，页面全白），所以真正的闸门在这里：
+     * 只有用户在警告框里确认过的那个 host 及其子域可以走明文。
+     *
+     * 注意这条在架构合并时曾被架空 —— 合并后所有 http 都放行了，
+     * 页面跳转到未确认的明文 host 也不拦。现已收回并补测试。
+     */
+    fun shouldBlockCleartext(url: String, confirmedHost: String?): Boolean {
+        if (!UrlGuard.isInsecure(url)) return false
+        val host = confirmedHost?.takeIf { it.isNotBlank() } ?: return true
+        val target = runCatching { java.net.URI(url).host }.getOrNull() ?: return true
+        return !(target.equals(host, ignoreCase = true) ||
+            target.endsWith(".$host", ignoreCase = true))
+    }
+
     fun grantDevicePermission(): Boolean = false
 
     fun grantGeolocation(): Boolean = false

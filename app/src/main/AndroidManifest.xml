@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 唯一的危险权限：联网。除此之外不申请任何权限。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SafeStream"
+        android:usesCleartextTraffic="false">
+
+        <!-- 主进程：地址栏、播放列表、播放器 -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 沙箱进程：只负责安全地渲染远端页面并上报发现的视频 -->
+        <activity
+            android:name=".sandbox.WebHostActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:excludeFromRecents="false"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:process=":sandbox"
+            android:theme="@style/Theme.SafeStream.Sandbox" />
+
+        <!-- 仅 PiP 需要；复用同一个 activity，不新增权限 -->
+    </application>
+
+</manifest>

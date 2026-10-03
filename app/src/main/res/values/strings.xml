@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SafeStream</string>
+    <string name="url_hint">粘贴视频网页地址</string>
+    <string name="action_load">加载</string>
+    <string name="action_shield">防护</string>
+    <string name="action_stop">停止拦截</string>
+    <string name="action_clear">清理并退出沙箱</string>
+    <string name="playlist_title">发现 %1$d 个视频</string>
+    <string name="playlist_empty">该页面暂未发现视频</string>
+    <string name="warn_insecure_title">该站点未加密</string>
+    <string name="warn_insecure_body">%1$s 使用明文 HTTP 传输，途中可能被篡改。确定仍要加载吗？</string>
+    <string name="warn_insecure_ok">仍要加载</string>
+    <string name="cancel">取消</string>
+    <string name="blocked_scheme">已阻止跳转：%1$s</string>
+    <string name="blocked_domain">已拦截广告/跟踪请求：%1$s</string>
+    <string name="blocked_download">已阻止下载</string>
+    <string name="sandbox_cleaned">沙箱数据已清理</string>
+    <string name="speed_label">倍速 %1$s</string>
+    <string name="resume_toast">已从 %1$s 继续播放</string>
+    <string name="history_empty">暂无历史记录</string>
+    <string name="no_playable_source">这个视频没有可用的播放地址（可能是 DRM 或 blob 流）</string>
+</resources>

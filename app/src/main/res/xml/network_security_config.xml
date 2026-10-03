@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  cleartextTrafficPermitted="false"：默认拒绝所有明文 HTTP。
+  明文 HTTP 只可能通过本地请求拦截层在运行期被单独放行，且需要用户显式确认。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

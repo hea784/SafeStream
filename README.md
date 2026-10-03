@@ -5,6 +5,15 @@
 
 > 本仓库的需求规格写在 [PROMPT.md](PROMPT.md)。代码改动请同步回写那里。
 
+## 直接下载安装
+
+**[Releases → v0.1.0](https://github.com/hea784/SafeStream/releases/tag/v0.1.0)** 下载 `app-release.apk`，
+传到手机点击安装（会提示"未知来源应用"，允许即可，自签名应用的正常提示）。
+要求 Android 7.0 (API 24) 及以上。
+
+> 二进制产物走 Release 附件，不进版本控制 —— 把 APK 提交进 git 会让仓库体积
+> 暴涨且每次改动都产生无意义的二进制 diff。
+
 ## 先说清楚两件事
 
 **一、这个 App 不能保证"零风险"。**

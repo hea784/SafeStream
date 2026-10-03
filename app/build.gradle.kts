@@ -1,7 +1,23 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
+
+// 签名凭据从仓库外的 properties 文件读取，绝不提交进版本控制。
+// 路径可用环境变量 SAFESTREAM_SIGNING_PROPS 覆盖。
+val signingPropsFile = File(
+    System.getenv("SAFESTREAM_SIGNING_PROPS")
+        ?: "D:\\dev-tools\\secrets\\safestream\\credentials.properties",
+)
+val signingProps = Properties().apply {
+    if (signingPropsFile.exists()) {
+        signingPropsFile.inputStream().use { load(it) }
+    }
+}
+val hasSigning = signingProps.getProperty("storeFile") != null
 
 android {
     namespace = "com.heasafe.safestream"
@@ -26,8 +42,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Release 凭据不写入仓库；正式签名请在本地/密钥库配置。
-            signingConfig = null
+            // 找不到凭据时回落到 debug 签名：至少产出可安装的包，
+            // 而不是装不上的 unsigned 包。
+            signingConfig = if (hasSigning) {
+                signingConfigs.create("release") {
+                    storeFile = file(signingProps.getProperty("storeFile"))
+                    storePassword = signingProps.getProperty("storePassword")
+                    keyAlias = signingProps.getProperty("keyAlias")
+                    keyPassword = signingProps.getProperty("keyPassword")
+                }
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

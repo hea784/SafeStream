@@ -24,6 +24,10 @@ import com.heasafe.safestream.core.TrackerBlocklist
 import com.heasafe.safestream.core.UrlGuard
 import com.heasafe.safestream.databinding.ActivityWebHostBinding
 import com.heasafe.safestream.security.WebSecurityPolicy
+import com.heasafe.safestream.security.SafeDownloadListener
+import com.heasafe.safestream.security.SafeWebChromeClient
+import com.heasafe.safestream.security.SafeWebViewClient
+import com.heasafe.safestream.security.applyHardening
 
 /**
  * 沙箱进程的唯一 Activity。
@@ -85,14 +89,24 @@ class WebHostActivity : ComponentActivity() {
 
         hardenWebView(webView)
         attachWebMessageListener(webView)
-        webView.webViewClient = SafeWebViewClient()
-        // 这四个加固回调（权限/弹窗/文件选择/定位）都挂在 WebChromeClient 上，
-        // 不是 WebViewClient。漏掉它等于四条安全契约全是空话。
-        webView.webChromeClient = SafeWebChromeClient()
-        webView.setDownloadListener { _, _, _, _, _ ->
-            // 安全契约 10：不下载任何东西
-            if (!WebSecurityPolicy.allowDownload()) reportEvent("已阻止下载")
+        val client = SafeWebViewClient(
+            onSecurityEvent = ::reportEvent,
+            onPageTitle = { title ->
+                sendUp(Bridge.ACTION_PAGE_TITLE) { putExtra(Bridge.EXTRA_TITLE, title) }
+            },
+            requestFilter = { true },
+        )
+        client.onLoadError = { detail -> reportEvent("加载失败：$detail") }
+        client.onRenderGone = {
+            reportEvent("页面渲染进程已崩溃，沙箱已终止")
+            finish()
         }
+        client.filterEnabled = filterEnabled
+        webView.webViewClient = client
+        // 权限/弹窗/文件选择/定位这四个加固回调挂在 WebChromeClient 上，
+        // 挂在 WebViewClient 上不会有任何效果。
+        webView.webChromeClient = SafeWebChromeClient(onSecurityEvent = ::reportEvent)
+        webView.setDownloadListener(SafeDownloadListener(onSecurityEvent = ::reportEvent))
 
         wireChrome()
 
@@ -137,32 +151,13 @@ class WebHostActivity : ComponentActivity() {
      */
     @SuppressLint("SetJavaScriptEnabled")
     private fun hardenWebView(wv: WebView) {
-        // 页面是远端内容，必须能跑 JS；但我们不向它暴露任何原生对象（见 attachWebMessageListener）
-        wv.settings.javaScriptEnabled = true
+        // 加固项全部委托给共用入口 —— 设备测试验证的正是这条路径，
+        // 两边走同一份代码，测试才不是装饰。
+        applyHardening(wv)
 
-        // 安全契约 3/5/6/8/11 的设置项统一由 WebSecurityPolicy 决定，
-        // 那里有对应的契约测试。这里只负责把值写进 WebSettings。
-        val p = WebSecurityPolicy.settings
-        wv.settings.allowFileAccess = p.allowFileAccess
-        wv.settings.allowContentAccess = p.allowContentAccess
-        @Suppress("DEPRECATION")
-        wv.settings.allowFileAccessFromFileURLs = p.allowFileAccessFromFileURLs
-        @Suppress("DEPRECATION")
-        wv.settings.allowUniversalAccessFromFileURLs = p.allowUniversalAccessFromFileURLs
-        if (p.mixedContentNeverAllow) {
-            wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        }
-        wv.settings.setSupportMultipleWindows(p.supportMultipleWindows)
-        wv.settings.javaScriptCanOpenWindowsAutomatically = p.javaScriptCanOpenWindowsAutomatically
-        wv.settings.setGeolocationEnabled(p.geolocationEnabled)
-
-        // 减少页面可用的能力面
-        wv.settings.domStorageEnabled = true      // 视频站点普遍需要
-        wv.settings.mediaPlaybackRequiresUserGesture = false
         wv.settings.loadsImagesAutomatically = true
         wv.settings.loadWithOverviewMode = true
         wv.settings.useWideViewPort = true
-        wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE  // 退出即不留缓存
 
         // 安全契约 13：Safe Browsing 由 AndroidManifest 的
         // android.webkit.WebView.EnableSafeBrowsing meta-data 开启（WebViewCompat 没有这个 API）；
@@ -171,9 +166,7 @@ class WebHostActivity : ComponentActivity() {
             WebView.setWebContentsDebuggingEnabled(false)
         }
 
-        // 安全契约 2/14：绝不使用 addJavascriptInterface；不持久化站点 Cookie
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, p.acceptThirdPartyCookies)
-        CookieManager.getInstance().setAcceptCookie(p.acceptCookies)
+        // 安全契约 2：绝不使用 addJavascriptInterface（见 attachWebMessageListener）
     }
 
     /**
@@ -424,156 +417,4 @@ class WebHostActivity : ComponentActivity() {
     private fun isDebuggable(): Boolean =
         (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    /** WebViewClient：导航决策 + 请求拦截，全部按白名单处理。 */
-    private inner class SafeWebViewClient : WebViewClient() {
-
-        override fun shouldOverrideUrlLoading(
-            view: WebView?,
-            request: WebResourceRequest?,
-        ): Boolean {
-            val url = request?.url?.toString().orEmpty()
-            return blockIfNotAllowed(url)
-        }
-
-        @Deprecated("兼容 API 24")
-        override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
-            blockIfNotAllowed(url.orEmpty())
-
-        private fun blockIfNotAllowed(url: String): Boolean {
-            if (WebSecurityPolicy.shouldBlockNavigation(url)) {
-                // 安全契约 3 + 11
-                reportEvent("已阻止跳转：${url.substringBefore("://")}")
-                return true
-            }
-            return false
-        }
-
-        override fun shouldInterceptRequest(
-            view: WebView?,
-            request: WebResourceRequest?,
-        ): WebResourceResponse? {
-            val url = request?.url?.toString().orEmpty()
-            if (url.isBlank()) return null
-
-            // 安全契约 12：广告/跟踪/挖矿请求直接返回空响应
-            if (filterEnabled && WebSecurityPolicy.shouldBlockRequest(url)) {
-                reportEvent("已拦截：${Uri.parse(url).host}")
-                return WebResourceResponse(
-                    "text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)),
-                )
-            }
-
-            // 安全契约 4：明文默认断掉，不给页面降级机会；
-            // 仅当用户在该 host 的警告框里点过"仍要加载"才放行。
-            if (UrlGuard.isInsecure(url) && !isInsecureAllowed(url)) {
-                return WebResourceResponse(
-                    "text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)),
-                )
-            }
-            return null
-        }
-
-        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-            super.onPageStarted(view, url, favicon)
-            injectScanner()
-        }
-
-        override fun onReceivedError(
-            view: WebView?,
-            request: WebResourceRequest?,
-            error: WebResourceError?,
-        ) {
-            super.onReceivedError(view, request, error)
-            // 静默失败是排查噩梦；主文档失败必须让用户看见原因
-            if (request?.isForMainFrame == true) {
-                reportEvent("加载失败：${error?.description ?: "未知错误"}")
-            }
-        }
-
-        override fun onPageFinished(view: WebView?, url: String?) {
-            super.onPageFinished(view, url)
-            val title = view?.title?.toString().orEmpty()
-            sendUp(Bridge.ACTION_PAGE_TITLE) { putExtra(Bridge.EXTRA_TITLE, title) }
-            injectScanner()
-        }
-
-        override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
-            // 渲染进程崩溃（恶意页面常见手法）时销毁整个沙箱，而不是复用可能已损坏的状态
-            reportEvent("页面渲染进程已崩溃，沙箱已终止")
-            finish()
-            return true
-        }
-
-        override fun onReceivedSslError(
-            view: WebView?,
-            handler: SslErrorHandler?,
-            error: SslError?,
-        ) {
-            if (WebSecurityPolicy.followSslError()) {
-                handler?.proceed()
-            } else {
-                // 证书错误一律中断，不给"继续"选项
-                handler?.cancel()
-                reportEvent("证书校验失败，已停止加载")
-            }
-        }
-    }
-
-    /**
-     * 页面能力请求的守门人。
-     *
-     * WebChromeClient 才是这些回调的宿主 —— WebViewClient 上重写它们不会有任何效果。
-     * 安全契约 7 / 8 / 9 全靠这个类落实。
-     */
-    private inner class SafeWebChromeClient : WebChromeClient() {
-
-        // 安全契约 7：网页请求的摄像头/麦克风/传感器一律拒绝
-        override fun onPermissionRequest(request: PermissionRequest?) {
-            if (WebSecurityPolicy.grantDevicePermission()) {
-                request?.grant(request.resources)
-            } else {
-                request?.deny()
-                reportEvent("已拒绝页面的设备权限请求")
-            }
-        }
-
-        override fun onPermissionRequestCanceled(request: PermissionRequest?) {
-            request?.deny()
-        }
-
-        override fun onGeolocationPermissionsShowPrompt(
-            origin: String?,
-            callback: GeolocationPermissions.Callback?,
-        ) {
-            val ok = WebSecurityPolicy.grantGeolocation()
-            callback?.invoke(origin, ok, false)
-        }
-
-        // 安全契约 9：不提供文件选择器，页面无法用"上传"诱导你交出本地文件
-        override fun onShowFileChooser(
-            view: WebView?,
-            filePathCallback: ValueCallback<Array<Uri>>?,
-            fileChooserParams: FileChooserParams?,
-        ): Boolean {
-            return if (WebSecurityPolicy.allowFileChooser()) {
-                false
-            } else {
-                filePathCallback?.onReceiveValue(null)
-                reportEvent("已阻止页面的文件选择请求")
-                true
-            }
-        }
-
-        // 安全契约 8：不创建新窗口，堵住无痕弹窗与广告劫持
-        override fun onCreateWindow(
-            view: WebView?,
-            isDialog: Boolean,
-            isUserGesture: Boolean,
-            resultMsg: Message?,
-        ): Boolean {
-            if (WebSecurityPolicy.allowNewWindow()) return false
-            reportEvent("已阻止页面弹窗")
-            return false
-        }
-    }
 }

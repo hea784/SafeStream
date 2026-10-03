@@ -32,6 +32,7 @@ android {
         resourceConfigurations += listOf("zh", "en")
         // 默认关闭：SSRF 防护。debug 构建会覆盖为 true 作为本地测试接缝。
         buildConfigField("boolean", "ALLOW_PRIVATE_HOSTS", "false")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -98,4 +99,9 @@ dependencies {
     implementation(libs.media3.session)
 
     testImplementation(libs.junit)
+
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

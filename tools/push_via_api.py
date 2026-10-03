@@ -11,6 +11,12 @@
   - 最终校验 API 返回的 tree sha 与本地 HEAD^{tree} 完全相同才允许更新 ref，
     内容有任何偏差就中止。
   - 更新 ref 用 force=false（快进语义），不会覆盖远端历史。
+    父提交取**远端当前 HEAD**，不是本地 HEAD^：某些环境下 github.com 被阻断无法 fetch，
+    远端可能有本地没有的提交（如只经 API 改过文件模式的提交）。以远端 HEAD 为父才能
+    通过快进校验。此时本地与远端历史会分叉，脚本会打印提示。
+
+MODE_OVERRIDE：Windows 上 git 把 gradlew 记为 100644，Linux 上 ./gradlew 会 Permission
+denied。API 推送时按这里强制修正。
 
 用法（在仓库根目录执行）：
     python tools/push_via_api.py
@@ -27,6 +33,7 @@ REPO = os.environ.get("GITHUB_REPO", "hea784/SafeStream")
 API = "https://api.github.com"
 # 脚本可能从任意目录被调用，git 命令一律以仓库根为工作目录
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODE_OVERRIDE = {"gradlew": "100755"}
 
 
 def gh_token():
@@ -81,21 +88,29 @@ def main():
         print("  upload  ", path)
 
     base = call("GET", "/git/ref/heads/main")["object"]["sha"]
+    local_heads = git("rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
+    if base not in local_heads:
+        print("注意：远端 HEAD " + base[:8] + " 不在本地历史中（github.com 被阻断无法 fetch）")
+        print("      本次以远端 HEAD 为父提交推送；推送后本地与远端历史分叉，")
+        print("      网络恢复后需要 git fetch --rebase 或 git reset --hard origin/main 归一。")
     tree_body = {
         "base_tree": base,
-        "tree": [{"path": p, "mode": m, "type": "blob", "sha": s} for m, s, p in entries],
+        "tree": [{"path": p, "mode": MODE_OVERRIDE.get(p, m), "type": "blob", "sha": s}
+                 for m, s, p in entries],
     }
     tree = call("POST", "/git/trees", tree_body)
-    local_tree = git("rev-parse", "HEAD^{tree}")
-    if tree["sha"] != local_tree:
-        raise SystemExit("tree 不一致，已中止：api=" + tree["sha"] + " local=" + local_tree)
+    # 有 mode override 时 tree sha 本就与本地不同，改用逐文件内容校验
+    expected = dict((p, s) for _m, s, p in entries)
+    for node in call("GET", "/git/trees/" + tree["sha"] + "?recursive=1")["tree"]:
+        if node["type"] == "blob" and node["path"] in expected:
+            if node["sha"] != expected[node["path"]]:
+                raise SystemExit("内容不一致，已中止：" + node["path"])
     print("tree ok:", tree["sha"][:8])
 
-    parents = git("rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
     commit_body = {
         "message": git("log", "-1", "--pretty=%B", "HEAD"),
         "tree": tree["sha"],
-        "parents": parents,
+        "parents": [base],
     }
     commit = call("POST", "/git/commits", commit_body)
     call("PATCH", "/git/refs/heads/main", {"sha": commit["sha"], "force": False})

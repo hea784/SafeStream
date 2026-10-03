@@ -176,9 +176,15 @@ class WebHostActivity : ComponentActivity() {
 
     private fun dispatchDiscovered(payload: String) {
         // 页面回传的 JSON 一律当作不可信输入解析，解析失败直接丢弃
-        val rawItems = runCatching {
-            org.json.JSONArray(payload)
-        }.getOrNull() ?: return
+        val root = runCatching { org.json.JSONObject(payload) }.getOrNull() ?: return
+
+        // 网络钩子单条上报：{"url":..., "kind":"fetch|xhr|mse"}
+        if (root.has("url") && !root.has("batch")) {
+            reportNetworkHit(root)
+            return
+        }
+
+        val rawItems = root.optJSONArray("batch") ?: return
 
         val json = buildString {
             append("[")
@@ -202,6 +208,29 @@ class WebHostActivity : ComponentActivity() {
             append("]")
         }
 
+        sendUp(Bridge.ACTION_VIDEOS_FOUND) { putExtra(Bridge.EXTRA_VIDEO_JSON, json) }
+    }
+
+    /**
+     * 网络钩子命中的媒体地址。
+     *
+     * "mse:video/mp2t" 这类只是流类型声明，不是可播放地址，丢掉。
+     * 真正的 .m3u8/.mp4 直接进列表，这样 MSE/blob 页面也能在原生播放器里播。
+     */
+    private fun reportNetworkHit(o: org.json.JSONObject) {
+        val url = o.optString("url")
+        val kind = o.optString("kind")
+        if (kind == "mse" || url.startsWith("mse:")) return
+        if (!UrlGuard.allowNavigation(url)) return
+        val json = org.json.JSONArray().put(
+            org.json.JSONObject().apply {
+                put("url", url)
+                put("title", "")
+                put("mimeType", "")
+                put("durationMs", 0)
+                put("sourcePage", o.optString("page"))
+            },
+        ).toString()
         sendUp(Bridge.ACTION_VIDEOS_FOUND) { putExtra(Bridge.EXTRA_VIDEO_JSON, json) }
     }
 

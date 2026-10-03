@@ -41,13 +41,21 @@ object TrackerBlocklist {
         "crypto-loot.com",
         "webminepool.com",
         "minero.cc",
+        // 实测自 akep5.xxpofweu.cc / huangguoai.com（黄果短剧）2026-10-03
+        "ahrefs.com",
+        "cloudflareinsights.com",
+        "ssp-core.jsdelivr.com",
     )
 
     private val DOMAIN_SUBSTRINGS = listOf(
         "ads.", "adservice.", "adserver.", "adsystem.",
         "doubleclick", "pagead", "popads", "adcash", "propellerads",
-        "track.", "tracker.", "beacon.", "telemetry.",
+        // "track." 匹配不到 tracking.js（track 后面是 i 不是点），
+        // 实测该站的 tracking.js 就是从这条路漏过去的
+        "track.", "tracker.", "tracking.js", "beacon.", "beacon.min.js", "telemetry.",
         "analytics", "collect.",
+        // 该站广告 SDK：ssp-core-vX.js / ssp-mount.js，负责插屏与全屏广告
+        "ssp-core", "ssp-mount",
     )
 
     private val PATH_MARKERS = listOf(

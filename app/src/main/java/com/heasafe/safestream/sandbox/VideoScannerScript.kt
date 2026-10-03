@@ -20,9 +20,59 @@ object VideoScannerScript {
 
       var EXT = /\.(m3u8|mp4|webm|mov|m4v|mkv|mpd)(\?|#|$)/i;
 
+      function post(url, kind) {
+        try {
+          window.SafeStreamBridge.postMessage(JSON.stringify({
+            url: url, kind: kind, page: location.href
+          }));
+        } catch (e) {}
+      }
+
       function abs(u) { try { return new URL(u, document.baseURI).href; } catch (e) { return null; } }
       function send(list) {
-        try { window.SafeStreamBridge.postMessage(JSON.stringify(list)); } catch (e) {}
+        try {
+          window.SafeStreamBridge.postMessage(JSON.stringify({ batch: list }));
+        } catch (e) {}
+      }
+
+      // ---- 网络层钩子：MSE/blob 页面的真实地址只存在于这里 ----
+      // 很多播放器（hls.js 等）用 fetch 或 XHR 拉清单，DOM 上只有 blob:。
+      // 钩住这两处能在请求发出的瞬间拿到 m3u8，不必等用户点播放。
+      function hookNet() {
+        if (window.__safestream_net) return;
+        window.__safestream_net = true;
+
+        try {
+          var of = window.fetch;
+          if (of) {
+            window.fetch = function (input) {
+              try {
+                var u = (typeof input === 'string') ? input : (input && input.url);
+                if (u && EXT.test(u)) post(u, 'fetch');
+              } catch (e) {}
+              return of.apply(this, arguments);
+            };
+          }
+        } catch (e) {}
+
+        try {
+          var oo = XMLHttpRequest.prototype.open;
+          XMLHttpRequest.prototype.open = function (method, url) {
+            try { if (url && EXT.test(url)) post(url, 'xhr'); } catch (e) {}
+            return oo.apply(this, arguments);
+          };
+        } catch (e) {}
+
+        // MediaSource 的 mime 也能佐证流类型，一并上报
+        try {
+          if (window.MediaSource && MediaSource.prototype.addSourceBuffer) {
+            var ob = MediaSource.prototype.addSourceBuffer;
+            MediaSource.prototype.addSourceBuffer = function (t) {
+              try { post('mse:' + t, 'mse'); } catch (e) {}
+              return ob.apply(this, arguments);
+            };
+          }
+        } catch (e) {}
       }
 
       function pickTitle(el, idx) {
@@ -111,9 +161,11 @@ object VideoScannerScript {
       } catch (e) {}
 
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        hookNet();
         setTimeout(merge, 600);
         setTimeout(merge, 2500);
       } else {
+        hookNet();
         document.addEventListener('DOMContentLoaded', function () { setTimeout(merge, 600); });
         window.addEventListener('load', function () { setTimeout(merge, 1200); });
       }

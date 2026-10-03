@@ -23,6 +23,7 @@ import com.heasafe.safestream.core.Bridge
 import com.heasafe.safestream.core.TrackerBlocklist
 import com.heasafe.safestream.core.UrlGuard
 import com.heasafe.safestream.databinding.ActivityWebHostBinding
+import com.heasafe.safestream.security.WebSecurityPolicy
 
 /**
  * 沙箱进程的唯一 Activity。
@@ -90,7 +91,7 @@ class WebHostActivity : ComponentActivity() {
         webView.webChromeClient = SafeWebChromeClient()
         webView.setDownloadListener { _, _, _, _, _ ->
             // 安全契约 10：不下载任何东西
-            reportEvent("已阻止下载")
+            if (!WebSecurityPolicy.allowDownload()) reportEvent("已阻止下载")
         }
 
         wireChrome()
@@ -139,21 +140,21 @@ class WebHostActivity : ComponentActivity() {
         // 页面是远端内容，必须能跑 JS；但我们不向它暴露任何原生对象（见 attachWebMessageListener）
         wv.settings.javaScriptEnabled = true
 
-        // 安全契约 5：文件与内容访问全关
-        wv.settings.allowFileAccess = false
-        wv.settings.allowContentAccess = false
+        // 安全契约 3/5/6/8/11 的设置项统一由 WebSecurityPolicy 决定，
+        // 那里有对应的契约测试。这里只负责把值写进 WebSettings。
+        val p = WebSecurityPolicy.settings
+        wv.settings.allowFileAccess = p.allowFileAccess
+        wv.settings.allowContentAccess = p.allowContentAccess
         @Suppress("DEPRECATION")
-        wv.settings.allowFileAccessFromFileURLs = false
+        wv.settings.allowFileAccessFromFileURLs = p.allowFileAccessFromFileURLs
         @Suppress("DEPRECATION")
-        wv.settings.allowUniversalAccessFromFileURLs = false
-
-        // 安全契约 6：混合内容一律拒绝
-        wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-        // 安全契约 3/11：不允许任何新窗口，页面无法拉起别的 App
-        wv.settings.setSupportMultipleWindows(false)
-        wv.settings.javaScriptCanOpenWindowsAutomatically = false
-        wv.settings.setGeolocationEnabled(false)
+        wv.settings.allowUniversalAccessFromFileURLs = p.allowUniversalAccessFromFileURLs
+        if (p.mixedContentNeverAllow) {
+            wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        }
+        wv.settings.setSupportMultipleWindows(p.supportMultipleWindows)
+        wv.settings.javaScriptCanOpenWindowsAutomatically = p.javaScriptCanOpenWindowsAutomatically
+        wv.settings.setGeolocationEnabled(p.geolocationEnabled)
 
         // 减少页面可用的能力面
         wv.settings.domStorageEnabled = true      // 视频站点普遍需要
@@ -170,9 +171,9 @@ class WebHostActivity : ComponentActivity() {
             WebView.setWebContentsDebuggingEnabled(false)
         }
 
-        // 安全契约 2：绝不使用 addJavascriptInterface
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
-        CookieManager.getInstance().setAcceptCookie(false)  // 不持久化站点 Cookie
+        // 安全契约 2/14：绝不使用 addJavascriptInterface；不持久化站点 Cookie
+        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, p.acceptThirdPartyCookies)
+        CookieManager.getInstance().setAcceptCookie(p.acceptCookies)
     }
 
     /**
@@ -389,6 +390,9 @@ class WebHostActivity : ComponentActivity() {
     }
 
     private fun reportEvent(message: String) {
+        // 审计留痕：安全工具应该能回答"刚才到底拦了什么"。
+        // 同时也是自动化回归测试唯一的观测点 —— 沙箱在前台时读不到主界面的状态行。
+        android.util.Log.i("SafeStreamSecurity", message)
         sendUp(Bridge.ACTION_SECURITY_EVENT) { putExtra(Bridge.EXTRA_MESSAGE, message) }
     }
 
@@ -436,9 +440,7 @@ class WebHostActivity : ComponentActivity() {
             blockIfNotAllowed(url.orEmpty())
 
         private fun blockIfNotAllowed(url: String): Boolean {
-            if (url.isBlank()) return true
-            if (url == "about:blank") return false
-            if (!UrlGuard.allowNavigation(url)) {
+            if (WebSecurityPolicy.shouldBlockNavigation(url)) {
                 // 安全契约 3 + 11
                 reportEvent("已阻止跳转：${url.substringBefore("://")}")
                 return true
@@ -454,7 +456,7 @@ class WebHostActivity : ComponentActivity() {
             if (url.isBlank()) return null
 
             // 安全契约 12：广告/跟踪/挖矿请求直接返回空响应
-            if (filterEnabled && TrackerBlocklist.isBlocked(url)) {
+            if (filterEnabled && WebSecurityPolicy.shouldBlockRequest(url)) {
                 reportEvent("已拦截：${Uri.parse(url).host}")
                 return WebResourceResponse(
                     "text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)),
@@ -507,9 +509,13 @@ class WebHostActivity : ComponentActivity() {
             handler: SslErrorHandler?,
             error: SslError?,
         ) {
-            // 证书错误一律中断，不给"继续"选项
-            handler?.cancel()
-            reportEvent("证书校验失败，已停止加载")
+            if (WebSecurityPolicy.followSslError()) {
+                handler?.proceed()
+            } else {
+                // 证书错误一律中断，不给"继续"选项
+                handler?.cancel()
+                reportEvent("证书校验失败，已停止加载")
+            }
         }
     }
 
@@ -523,8 +529,12 @@ class WebHostActivity : ComponentActivity() {
 
         // 安全契约 7：网页请求的摄像头/麦克风/传感器一律拒绝
         override fun onPermissionRequest(request: PermissionRequest?) {
-            request?.deny()
-            reportEvent("已拒绝页面的设备权限请求")
+            if (WebSecurityPolicy.grantDevicePermission()) {
+                request?.grant(request.resources)
+            } else {
+                request?.deny()
+                reportEvent("已拒绝页面的设备权限请求")
+            }
         }
 
         override fun onPermissionRequestCanceled(request: PermissionRequest?) {
@@ -535,7 +545,8 @@ class WebHostActivity : ComponentActivity() {
             origin: String?,
             callback: GeolocationPermissions.Callback?,
         ) {
-            callback?.invoke(origin, false, false)
+            val ok = WebSecurityPolicy.grantGeolocation()
+            callback?.invoke(origin, ok, false)
         }
 
         // 安全契约 9：不提供文件选择器，页面无法用"上传"诱导你交出本地文件
@@ -544,9 +555,13 @@ class WebHostActivity : ComponentActivity() {
             filePathCallback: ValueCallback<Array<Uri>>?,
             fileChooserParams: FileChooserParams?,
         ): Boolean {
-            filePathCallback?.onReceiveValue(null)
-            reportEvent("已阻止页面的文件选择请求")
-            return true
+            return if (WebSecurityPolicy.allowFileChooser()) {
+                false
+            } else {
+                filePathCallback?.onReceiveValue(null)
+                reportEvent("已阻止页面的文件选择请求")
+                true
+            }
         }
 
         // 安全契约 8：不创建新窗口，堵住无痕弹窗与广告劫持
@@ -556,6 +571,7 @@ class WebHostActivity : ComponentActivity() {
             isUserGesture: Boolean,
             resultMsg: Message?,
         ): Boolean {
+            if (WebSecurityPolicy.allowNewWindow()) return false
             reportEvent("已阻止页面弹窗")
             return false
         }

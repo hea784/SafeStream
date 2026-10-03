@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -51,28 +52,37 @@ def call(method, path, payload=None, allow_missing=False):
     url = API + "/repos/" + REPO + path
     # 用 curl 而不是 urllib：本机实测 urllib 会被对端重置连接（WinError 10054），
     # 而 curl 走同样的 api.github.com 稳定可用。两者 TLS 行为有差异。
-    args = ["curl.exe", "-sS", "-X", method, url,
-            "-H", "Authorization: Bearer " + TOKEN,
-            "-H", "Accept: application/vnd.github+json",
-            "-H", "Content-Type: application/json",
-            "-H", "User-Agent: safestream-push",
-            "--max-time", "90", "-w", "\n%{http_code}"]
-    if payload is not None:
-        body = json.dumps(payload).encode("utf-8")
-        args += ["--data-binary", "@-"]
-        p = subprocess.run(args, input=body, capture_output=True)
-    else:
-        p = subprocess.run(args, capture_output=True)
-    out = p.stdout.decode("utf-8", "replace")
-    if "\n" not in out:
-        raise SystemExit("curl 无输出: " + p.stderr.decode("utf-8", "replace")[:300])
-    text, _, code_s = out.rpartition("\n")
-    code = int(code_s.strip() or 0)
-    if code == 404 and allow_missing:
-        return None
-    if code >= 400:
-        raise SystemExit("HTTP %s %s\n%s" % (code, path, text[:600]))
-    return json.loads(text) if text.strip() else None
+    last = "未知"
+    # 本机到 api.github.com 的连接会被偶发重置：单次空响应不代表请求有问题，
+    # 重试比让人手工再跑一遍靠谱。
+    for attempt in range(4):
+        args = ["curl.exe", "-sS", "-X", method, url,
+                "-H", "Authorization: Bearer " + TOKEN,
+                "-H", "Accept: application/vnd.github+json",
+                "-H", "Content-Type: application/json",
+                "-H", "User-Agent: safestream-push",
+                "--max-time", "90", "-w", "\n%{http_code}"]
+        if payload is not None:
+            args += ["--data-binary", "@-"]
+            p = subprocess.run(args, input=json.dumps(payload).encode("utf-8"),
+                               capture_output=True)
+        else:
+            p = subprocess.run(args, capture_output=True)
+        out = p.stdout.decode("utf-8", "replace")
+        if "\n" not in out:
+            last = "curl 无输出: " + p.stderr.decode("utf-8", "replace")[:200]
+        else:
+            text, _, code_s = out.rpartition("\n")
+            code = int(code_s.strip() or 0)
+            if code == 404 and allow_missing:
+                return None
+            if code >= 400:
+                raise SystemExit("HTTP %s %s\n%s" % (code, path, text[:600]))
+            if text.strip():
+                return json.loads(text)
+            last = "HTTP %s 但响应体为空（连接中途被重置）" % code
+        time.sleep(2 * (attempt + 1))
+    raise SystemExit("重试 4 次仍失败：%s" % last)
 
 
 def git(*args, binary=False):

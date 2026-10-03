@@ -49,22 +49,30 @@ TOKEN = gh_token()
 
 def call(method, path, payload=None, allow_missing=False):
     url = API + "/repos/" + REPO + path
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", "Bearer " + TOKEN)
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("User-Agent", "safestream-push")
-    try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if allow_missing and exc.code == 404:
-            return None
-        # GitHub 的错误信息在 body 里，丢掉它就只能看到光秃秃的 400，
-        # 无法定位到底是 blob 太大、内容非法还是限流。
-        body = exc.read().decode("utf-8", "replace")[:600]
-        raise SystemExit("HTTP %s %s\n%s" % (exc.code, exc.reason, body))
+    # 用 curl 而不是 urllib：本机实测 urllib 会被对端重置连接（WinError 10054），
+    # 而 curl 走同样的 api.github.com 稳定可用。两者 TLS 行为有差异。
+    args = ["curl.exe", "-sS", "-X", method, url,
+            "-H", "Authorization: Bearer " + TOKEN,
+            "-H", "Accept: application/vnd.github+json",
+            "-H", "Content-Type: application/json",
+            "-H", "User-Agent: safestream-push",
+            "--max-time", "90", "-w", "\n%{http_code}"]
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        args += ["--data-binary", "@-"]
+        p = subprocess.run(args, input=body, capture_output=True)
+    else:
+        p = subprocess.run(args, capture_output=True)
+    out = p.stdout.decode("utf-8", "replace")
+    if "\n" not in out:
+        raise SystemExit("curl 无输出: " + p.stderr.decode("utf-8", "replace")[:300])
+    text, _, code_s = out.rpartition("\n")
+    code = int(code_s.strip() or 0)
+    if code == 404 and allow_missing:
+        return None
+    if code >= 400:
+        raise SystemExit("HTTP %s %s\n%s" % (code, path, text[:600]))
+    return json.loads(text) if text.strip() else None
 
 
 def git(*args, binary=False):

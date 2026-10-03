@@ -81,11 +81,6 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                Bridge.ACTION_PAGE_TITLE ->
-                    intent.getStringExtra(Bridge.EXTRA_TITLE)?.let { title ->
-                        history.rememberVisit(binding.urlInput.text?.toString().orEmpty(), title)
-                    }
-
                 Bridge.ACTION_SECURITY_EVENT -> onSecurityEvent(
                     intent.getStringExtra(Bridge.EXTRA_MESSAGE).orEmpty(),
                 )
@@ -125,12 +120,13 @@ class MainActivity : AppCompatActivity() {
         }
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
+        // UI 重构时这个监听被漏掉了，按钮成 dead UI。接回去。
+        binding.speedButton.setOnClickListener { cycleSpeed() }
 
         binding.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_play -> true
                 R.id.nav_browse -> { openBrowser(); false }
-                R.id.nav_shield -> { showShieldSheet(); false }
                 else -> false
             }
         }
@@ -221,30 +217,6 @@ class MainActivity : AppCompatActivity() {
             .putExtra(Bridge.EXTRA_ENABLED, filterEnabled))
     }
 
-    /** 防护标签：把防护相关的操作收进底部弹层，不占用主界面。 */
-    private fun showShieldSheet() {
-        val blocked = if (blockedCount > 0) "本次已拦截 $blockedCount 个跟踪/广告请求" else "本次尚未拦截到请求"
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.action_shield)
-            .setMessage(
-                buildString {
-                    append("广告与跟踪拦截：")
-                    append(if (filterEnabled) "已开启" else "已关闭（不推荐）")
-                    append("\n")
-                    append(blocked)
-                    append("\n\n沙箱进程：")
-                    append(if (sandboxRunning) "运行中" else "未运行")
-                    append("\n\n长按顶部的盾牌图标可清理全部本地数据并停止沙箱。")
-                },
-            )
-            .setNeutralButton(if (filterEnabled) R.string.action_stop else R.string.action_shield) { _, _ ->
-                toggleFilter()
-            }
-            .setPositiveButton(R.string.action_clear) { _, _ -> purgeEverything() }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
     private fun startSandbox(url: String) {
         startSandbox(url, insecureHostAllowed = null)
     }
@@ -265,7 +237,6 @@ class MainActivity : AppCompatActivity() {
             .putExtra(Bridge.EXTRA_INSECURE_HOST, insecureHostAllowed)
         startActivity(intent)
         sandboxRunning = true
-        history.rememberVisit(url, url)
         binding.urlInput.setText(url)
         binding.urlInput.setSelection(url.length)
         updateShieldUi()
@@ -425,7 +396,6 @@ class MainActivity : AppCompatActivity() {
         // 同地址已在播放/加载中就不重建 MediaItem，否则画面会反复重置闪烁
         if (item.url == playingUrl) return
 
-        Log.d(LOG_TAG, "playAt 重建播放: " + item.url)
         playingUrl = item.url
         currentIndex = index
         adapter.playingIndex = index
@@ -514,7 +484,7 @@ class MainActivity : AppCompatActivity() {
         // 列表区域常驻，空状态用叠加文字提示，避免隐藏列表把标题挤到底部
         binding.emptyState.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
         if (!sandboxRunning && binding.statusLine.text.isNullOrBlank()) {
-            binding.statusLine.text = getString(R.string.history_empty)
+            binding.statusLine.text = getString(R.string.status_idle)
         }
     }
 
@@ -527,14 +497,23 @@ class MainActivity : AppCompatActivity() {
         val idx = SPEEDS.indexOfFirst { it == p.playbackParameters.speed }.takeIf { it >= 0 } ?: 0
         val next = SPEEDS[(idx + 1) % SPEEDS.size]
         p.setPlaybackSpeed(next)
-        binding.speedButton.text = "%.2gx".format(next).replace(".00x", "x").replace("0x", "x")
-        toast(getString(R.string.speed_label, "${next}x"))
+        binding.speedButton.text = formatSpeed(next)
+        toast(getString(R.string.speed_label, formatSpeed(next)))
+    }
+
+    /** 1.0 -> 1x，1.25 -> 1.25x。原来那串 replace 会输出 "1.25gx"，多一个 g。 */
+    private fun formatSpeed(speed: Float): String {
+        val text = if (speed % 1f == 0f) {
+            speed.toInt().toString()
+        } else {
+            speed.toString()
+        }
+        return "${text}x"
     }
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
     private companion object {
-        const val LOG_TAG = "SafeStream"
         const val SUBMIT_DEBOUNCE_MS = 2000L
 
         /** 输入的不是网址时，按搜索词拼到这个前缀后交给沙箱。 */

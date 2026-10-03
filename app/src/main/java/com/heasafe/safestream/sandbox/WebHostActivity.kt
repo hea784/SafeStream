@@ -126,10 +126,6 @@ class WebHostActivity : ComponentActivity() {
             when (item.itemId) {
                 R.id.nav_play -> { finish(); true }
                 R.id.nav_browse -> true
-                R.id.nav_shield -> {
-                    reportEvent("广告与跟踪拦截" + if (filterEnabled) "已开启" else "已关闭")
-                    true
-                }
                 else -> false
             }
         }
@@ -207,11 +203,6 @@ class WebHostActivity : ComponentActivity() {
                 // 直接取 data 更稳，且不依赖版本相关的常量映射。
                 val payload = message.data
                 if (payload.isNullOrBlank()) return
-                android.util.Log.d(
-                    "SafeStream",
-                    "onPostMessage type=${message.type} main=$isMainFrame len=" +
-                        payload.length,
-                )
                 dispatchDiscovered(payload)
             }
         }
@@ -359,19 +350,10 @@ class WebHostActivity : ComponentActivity() {
     private fun injectScanner() {
         val js = VideoScannerScript.SOURCE
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            // 原生侧探针：直接读页面里桥接对象是否存在。
-            // JS 侧所有 postMessage 都被 try/catch 包着，桥接缺失时是静默失败，
-            // 没有这行日志就只能靠猜。
-            webView.evaluateJavascript("String(typeof window.SafeStreamBridge)") { r ->
-                android.util.Log.d(
-                    "SafeStream",
-                    "bridge=" + r + " featureSupported=" +
-                        WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER),
-                )
-            }
             webView.evaluateJavascript(js, null)
         } else {
-            android.util.Log.w("SafeStream", "WebView 不支持 WEB_MESSAGE_LISTENER，选集与网络发现不可用")
+            // 这条不该只进 logcat：功能不可用时用户要在界面上看见原因
+            reportEvent("当前 WebView 不支持安全消息通道，选集与网络发现不可用")
         }
     }
 

@@ -1,61 +1,31 @@
 package com.heasafe.safestream.data
 
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * 本地只存两类数据：地址历史、每个视频的播放进度。
+ * 只存一件事：每个视频的播放进度，用于断点续播。
  *
- * 用 SharedPreferences + JSON 而不是数据库 —— 数据量小、结构固定，没有引入 Room 的必要。
+ * 原来这里还存了一份"访问历史"，但界面上没有任何地方展示它 ——
+ * 写了从不读，是看不见的死状态，已删掉。要历史功能就等有界面时再加。
+ *
+ * 用 SharedPreferences 而不是数据库：只有一个 key-value 映射，引入 Room 是浪费。
  * 不存任何 Cookie、token 或页面内容。
  */
 class HistoryStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("safestream", Context.MODE_PRIVATE)
 
-    data class Entry(val url: String, val title: String, val visitedAt: Long)
-
-    fun history(): List<Entry> {
-        val arr = JSONArray(prefs.getString(KEY_HISTORY, "[]"))
-        val out = ArrayList<Entry>(arr.length())
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            out.add(
-                Entry(
-                    url = o.optString("url"),
-                    title = o.optString("title"),
-                    visitedAt = o.optLong("visitedAt"),
-                ),
-            )
-        }
-        return out.sortedByDescending { it.visitedAt }
+    /**
+     * 进度以 URL 的哈希为 key。
+     *
+     * 不能直接用 URL：签名流地址带 auth_key，长度可达几百字符，
+     * 而且每次请求都变 —— 当 key 用既撑大 prefs 又永远命中不了。
+     */
+    private fun progressKey(url: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(url.toByteArray())
+        return "p_" + digest.joinToString("") { "%02x".format(it) }
     }
-
-    fun rememberVisit(url: String, title: String) {
-        val now = System.currentTimeMillis()
-        val merged = history().filterNot { it.url == url }
-            .toMutableList()
-            .apply {
-                add(0, Entry(url, title.ifBlank { url }, now))
-            }
-            .take(50)
-
-        val arr = JSONArray()
-        merged.forEach {
-            arr.put(
-                JSONObject().apply {
-                    put("url", it.url)
-                    put("title", it.title)
-                    put("visitedAt", it.visitedAt)
-                },
-            )
-        }
-        prefs.edit().putString(KEY_HISTORY, arr.toString()).apply()
-    }
-
-    /** 断点续播位置。毫秒。 */
-    fun progressKey(url: String) = "progress_$url"
 
     fun saveProgress(url: String, positionMs: Long, durationMs: Long) {
         // 快到尾声的进度没有续播价值
@@ -67,5 +37,3 @@ class HistoryStore(context: Context) {
 
     fun clearAll() = prefs.edit().clear().apply()
 }
-
-private const val KEY_HISTORY = "history"

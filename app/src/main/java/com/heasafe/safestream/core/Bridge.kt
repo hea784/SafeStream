@@ -30,6 +30,9 @@ object Bridge {
     /** 主进程下发：要求沙箱立刻重新扫描页面。 */
     const val ACTION_RESCAN = "com.heasafe.safestream.RESCAN"
 
+    /** 沙箱上报/请求：用户在沙箱搜索栏里输入了新地址，请主进程接管校验与调度。 */
+    const val ACTION_NAVIGATE = "com.heasafe.safestream.NAVIGATE"
+
     const val EXTRA_VIDEO_JSON = "video_json"
     const val EXTRA_TITLE = "title"
     const val EXTRA_MESSAGE = "message"

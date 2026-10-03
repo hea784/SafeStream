@@ -1,10 +1,14 @@
 package com.heasafe.safestream.ui
 
+import android.graphics.Typeface
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.heasafe.safestream.R
 import com.heasafe.safestream.databinding.ItemVideoBinding
 import com.heasafe.safestream.model.VideoItem
 import java.util.Locale
@@ -30,25 +34,40 @@ class PlaylistAdapter(
     inner class VH(private val b: ItemVideoBinding) : RecyclerView.ViewHolder(b.root) {
         fun bind(position: Int) {
             val item = getItem(position)
+            val ctx = b.root.context
+            val active = position == playingIndex
+
             b.videoTitle.text = item.title
             b.videoMeta.text = metaLine(item)
-            b.root.alpha = if (item.isPlayable) 1f else 0.5f
-            b.root.isActivated = position == playingIndex
-            b.videoTitle.setTypeface(
-                b.videoTitle.typeface,
-                if (position == playingIndex) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL,
+            b.videoIndex.text = (position + 1).toString()
+            b.playingBadge.visibility = if (active) View.VISIBLE else View.GONE
+
+            val accent = ContextCompat.getColor(ctx, R.color.brand)
+            val muted = ContextCompat.getColor(ctx, R.color.text_secondary)
+            b.videoTitle.setTextColor(if (active) accent else
+                ContextCompat.getColor(ctx, R.color.text_primary))
+            b.videoMeta.setTextColor(muted)
+            b.videoIndex.setTextColor(if (active) accent else muted)
+            b.videoTitle.setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
+
+            // 不可播放的条目弱化但仍可见，标明原因而不是直接消失
+            b.root.alpha = if (item.isPlayable) 1f else 0.55f
+            b.videoCard.setStrokeColor(
+                ContextCompat.getColor(
+                    ctx,
+                    if (active) R.color.brand else R.color.divider,
+                ),
             )
             b.root.setOnClickListener { onClick(position, item) }
         }
 
         private fun metaLine(item: VideoItem): String {
             val kind = when {
-                !item.isPlayable -> "不可播放"
+                !item.isPlayable -> item.contextLabel()
                 item.url.contains(".m3u8") -> "HLS"
                 item.url.contains(".mpd") -> "DASH"
                 item.mimeType.contains("mpegurl") -> "HLS"
                 item.mimeType.isBlank() || item.mimeType == "video/unknown" ->
-                    // 页面通常不声明 mime，优先从扩展名推断
                     EXT_LABEL[item.url.substringBefore('?').substringBefore('#')
                         .substringAfterLast('.').lowercase(Locale.ROOT)] ?: "直链"
                 else -> item.mimeType.substringAfterLast('/').uppercase(Locale.ROOT)
@@ -65,6 +84,8 @@ class PlaylistAdapter(
             }
             return listOf(duration, kind).filter { it.isNotBlank() }.joinToString(" · ")
         }
+
+        private fun VideoItem.contextLabel() = "网页内播放"
     }
 
     private companion object {

@@ -18,6 +18,7 @@ import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.heasafe.safestream.R
 import com.heasafe.safestream.core.Bridge
 import com.heasafe.safestream.core.TrackerBlocklist
 import com.heasafe.safestream.core.UrlGuard
@@ -92,8 +93,46 @@ class WebHostActivity : ComponentActivity() {
             reportEvent("已阻止下载")
         }
 
+        wireChrome()
+
         registerControlReceiver()
         webView.loadUrl(url)
+    }
+
+    /**
+     * 沙箱界面的外壳：搜索栏与底部导航和主界面保持一致，
+     * 两个界面虽然分属不同进程，但切换时视觉上是连续的。
+     */
+    private fun wireChrome() {
+        binding.urlInput.setText(intent.getStringExtra(Bridge.EXTRA_URL).orEmpty())
+        binding.urlInput.setOnEditorActionListener { _, actionId, _ ->
+            val text = binding.urlInput.text?.toString()?.trim().orEmpty()
+            if (text.isEmpty()) return@setOnEditorActionListener true
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH ||
+                actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO
+            ) {
+                // 交给主进程做校验与调度，沙箱不自行放行任何东西
+                sendUp(Bridge.ACTION_NAVIGATE) { putExtra(Bridge.EXTRA_URL, text) }
+                true
+            } else false
+        }
+        binding.shieldButton.setOnClickListener {
+            sendUp(Bridge.ACTION_SET_FILTER) {
+                putExtra(Bridge.EXTRA_ENABLED, !filterEnabled)
+            }
+        }
+        binding.bottomNav.selectedItemId = R.id.nav_browse
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_play -> { finish(); true }
+                R.id.nav_browse -> true
+                R.id.nav_shield -> {
+                    reportEvent("广告与跟踪拦截" + if (filterEnabled) "已开启" else "已关闭")
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     /**
@@ -222,6 +261,31 @@ class WebHostActivity : ComponentActivity() {
         val kind = o.optString("kind")
         if (kind == "mse" || url.startsWith("mse:")) return
         if (!UrlGuard.allowNavigation(url)) return
+
+        // 用户在网页里点了某个视频：把这个地址交给主进程播放，
+        // 然后关掉沙箱让播放器回到前台 —— 这就是"在网页里挑着看"的路径。
+        if (kind == "click") {
+            sendUp(Bridge.ACTION_VIDEOS_FOUND) {
+                putExtra(
+                    Bridge.EXTRA_VIDEO_JSON,
+                    org.json.JSONArray().put(
+                        org.json.JSONObject().apply {
+                            put("url", url)
+                            put("title", "")
+                            put("mimeType", "")
+                            put("durationMs", 0)
+                            put("sourcePage", o.optString("page"))
+                        },
+                    ).toString(),
+                )
+                putExtra(Bridge.EXTRA_MESSAGE, "PLAY_NOW")
+            }
+            // 主界面就在本 Activity 下方，自行结束即可回到前台，
+            // 不用在主进程里做 Activity 跳转。留一点时间让广播送达。
+            binding.root.postDelayed({ finish() }, 150)
+            return
+        }
+
         val json = org.json.JSONArray().put(
             org.json.JSONObject().apply {
                 put("url", url)

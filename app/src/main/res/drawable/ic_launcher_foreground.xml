@@ -3,15 +3,14 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!--
+      手写而非图像生成：应用图标属于功能型视觉，需要精确几何。
+      扩散模型画不出干净利落的实心镂空（实测两次都退化成线框），
+      且 512² PNG 有 185KB，而这份矢量只有几百字节、缩放无损。
+      盾牌=安全防护，镂空三角=视频播放，两条产品线合成一个符号。
+    -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M42,36 L42,72 L74,54 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.85"
-        android:pathData="M30,26 h10 v56 h-10 z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.85"
-        android:pathData="M68,26 h10 v56 h-10 z" />
+        android:fillType="evenOdd"
+        android:pathData="M54,26 L75,34.5 L75,55 C75,67.5 66.5,78 54,84 C41.5,78 33,67.5 33,55 L33,34.5 Z M48.5,44.5 L48.5,65 L65,54.75 Z" />
 </vector>

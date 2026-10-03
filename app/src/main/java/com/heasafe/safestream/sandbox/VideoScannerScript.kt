@@ -75,6 +75,24 @@ object VideoScannerScript {
         } catch (e) {}
       }
 
+      // ---- 点击捕获：用户在网页里点某个视频时，把它的地址报回去 ----
+      // 这样"挑哪个看哪个"可以直接在网页里完成，不用退回列表再点一次。
+      function hookClicks() {
+        if (window.__safestream_click) return;
+        window.__safestream_click = true;
+        document.addEventListener('click', function (ev) {
+          try {
+            var v = ev.target && ev.target.closest ? ev.target.closest('video') : null;
+            if (!v) return;
+            var u = v.currentSrc || v.src || v.getAttribute('data-video-url') || '';
+            if (!u || u.indexOf('blob:') === 0) return;
+            window.SafeStreamBridge.postMessage(JSON.stringify({
+              url: u, kind: 'click', page: location.href
+            }));
+          } catch (e) {}
+        }, true);
+      }
+
       function pickTitle(el, idx) {
         var t = '';
         try {
@@ -170,10 +188,12 @@ object VideoScannerScript {
 
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
         hookNet();
+        hookClicks();
         setTimeout(merge, 600);
         setTimeout(merge, 2500);
       } else {
         hookNet();
+        hookClicks();
         document.addEventListener('DOMContentLoaded', function () { setTimeout(merge, 600); });
         window.addEventListener('load', function () { setTimeout(merge, 1200); });
       }

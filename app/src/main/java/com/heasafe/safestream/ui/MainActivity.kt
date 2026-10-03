@@ -11,6 +11,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -54,11 +55,21 @@ class MainActivity : AppCompatActivity() {
     private var filterEnabled = true
     private var blockedCount = 0
 
+    /** 最近一次交给沙箱的地址，"浏览"标签复用它。 */
+    private var lastSandboxUrl: String? = null
+
     private val sandboxReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 Bridge.ACTION_VIDEOS_FOUND ->
-                    intent.getStringExtra(Bridge.EXTRA_VIDEO_JSON)?.let(::onVideosFound)
+                    intent.getStringExtra(Bridge.EXTRA_VIDEO_JSON)?.let { json ->
+                        // 沙箱里点了视频：先播它，再把沙箱收掉让本界面回到前台
+                        if (intent.getStringExtra(Bridge.EXTRA_MESSAGE) == "PLAY_NOW") {
+                            playNow(json)
+                        } else {
+                            onVideosFound(json)
+                        }
+                    }
 
                 Bridge.ACTION_PAGE_TITLE ->
                     intent.getStringExtra(Bridge.EXTRA_TITLE)?.let { title ->
@@ -68,6 +79,13 @@ class MainActivity : AppCompatActivity() {
                 Bridge.ACTION_SECURITY_EVENT -> onSecurityEvent(
                     intent.getStringExtra(Bridge.EXTRA_MESSAGE).orEmpty(),
                 )
+
+                Bridge.ACTION_NAVIGATE -> {
+                    // 沙箱搜索栏回车：走和主界面一样的校验流程，不在沙箱里自行放行
+                    val target = intent.getStringExtra(Bridge.EXTRA_URL).orEmpty()
+                    binding.urlInput.setText(target)
+                    submitUrl()
+                }
             }
         }
     }
@@ -81,12 +99,24 @@ class MainActivity : AppCompatActivity() {
         adapter = PlaylistAdapter { index, item -> playAt(index, item) }
         binding.playlistList.adapter = adapter
 
-        binding.loadButton.setOnClickListener { submitUrl() }
+        // 没有"加载"按钮：搜索栏回车即提交，少一次点击
         binding.urlInput.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_GO) { submitUrl(); true } else false
+            if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                actionId == EditorInfo.IME_ACTION_GO
+            ) { submitUrl(); true } else false
         }
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
+
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_play -> true
+                R.id.nav_browse -> { openBrowser(); false }
+                R.id.nav_shield -> { showShieldSheet(); false }
+                else -> false
+            }
+        }
+        binding.bottomNav.selectedItemId = R.id.nav_play
 
         updateShieldUi()
         updatePlaylistUi()
@@ -118,7 +148,15 @@ class MainActivity : AppCompatActivity() {
 
     /** 地址栏 -> UrlGuard -> 沙箱。 */
     private fun submitUrl() {
-        val raw = binding.urlInput.text?.toString().orEmpty()
+        val raw = binding.urlInput.text?.toString().orEmpty().trim()
+        if (raw.isEmpty()) return
+
+        // 输入的如果不是网址，就当搜索词处理，省得用户自己拼搜索引擎
+        if (looksLikeKeyword(raw)) {
+            startSandbox(SEARCH_PREFIX + java.net.URLEncoder.encode(raw, "UTF-8"))
+            return
+        }
+
         when (val verdict = UrlGuard.inspect(raw)) {
             is UrlGuard.Result.Rejected ->
                 toast(verdict.reason)
@@ -137,6 +175,50 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 像域名/带 scheme 的算网址，否则当搜索词。 */
+    private fun looksLikeKeyword(input: String): Boolean {
+        if (input.contains("://")) return false
+        if (input.contains(' ')) return true
+        // 有空格或没有点号，就是搜索词；有扩展名样式则按网址处理
+        val looksLikeHost = input.substringBefore('/').contains('.')
+        return !looksLikeHost
+    }
+
+    /** 浏览标签：把沙箱切到前台。网页必须在 :sandbox 进程，所以是另一个 Activity。 */
+    private fun openBrowser() {
+        val url = binding.urlInput.text?.toString()?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: lastSandboxUrl
+            ?: return
+        startActivity(Intent(this, WebHostActivity::class.java)
+            .putExtra(Bridge.EXTRA_URL, url)
+            .putExtra(Bridge.EXTRA_ENABLED, filterEnabled))
+    }
+
+    /** 防护标签：把防护相关的操作收进底部弹层，不占用主界面。 */
+    private fun showShieldSheet() {
+        val blocked = if (blockedCount > 0) "本次已拦截 $blockedCount 个跟踪/广告请求" else "本次尚未拦截到请求"
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.action_shield)
+            .setMessage(
+                buildString {
+                    append("广告与跟踪拦截：")
+                    append(if (filterEnabled) "已开启" else "已关闭（不推荐）")
+                    append("\n")
+                    append(blocked)
+                    append("\n\n沙箱进程：")
+                    append(if (sandboxRunning) "运行中" else "未运行")
+                    append("\n\n长按顶部的盾牌图标可清理全部本地数据并停止沙箱。")
+                },
+            )
+            .setNeutralButton(if (filterEnabled) R.string.action_stop else R.string.action_shield) { _, _ ->
+                toggleFilter()
+            }
+            .setPositiveButton(R.string.action_clear) { _, _ -> purgeEverything() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun startSandbox(url: String) {
         startSandbox(url, insecureHostAllowed = null)
     }
@@ -145,6 +227,7 @@ class MainActivity : AppCompatActivity() {
         stopSandbox()
         blockedCount = 0
         playingUrl = null
+        lastSandboxUrl = url
         videos = emptyList()
         adapter.submitList(emptyList())
         currentIndex = RecyclerView.NO_POSITION
@@ -216,6 +299,19 @@ class MainActivity : AppCompatActivity() {
         // 只有一个视频时直接开始，省一次点击；已经在播同一个就不重启
         val only = next.singleOrNull()
         if (only != null && only.url != playingUrl) playAt(0, only)
+    }
+
+    /** 沙箱里点了视频：不进列表，直接播。 */
+    private fun playNow(json: String) {
+        val arr = JSONArray(json)
+        for (i in 0 until arr.length()) {
+            val item = VideoItem.fromJson(arr.optString(i)) ?: continue
+            videos = listOf(item)
+            adapter.submitList(videos)
+            updatePlaylistUi()
+            playAt(0, item)
+            return
+        }
     }
 
     private fun onSecurityEvent(message: String) {
@@ -307,9 +403,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateShieldUi() {
-        binding.shieldButton.setText(if (filterEnabled) R.string.action_shield else R.string.action_stop)
-        binding.shieldButton.setIconResource(
-            if (filterEnabled) android.R.drawable.ic_lock_idle_lock else android.R.drawable.ic_dialog_alert,
+        binding.shieldButton.setImageResource(
+            if (filterEnabled) R.drawable.ic_shield_on else R.drawable.ic_shield_off,
+        )
+        binding.shieldButton.imageTintList = android.content.res.ColorStateList.valueOf(
+            ContextCompat.getColor(
+                this,
+                if (filterEnabled) R.color.ok else R.color.danger,
+            ),
         )
         binding.shieldButton.alpha = if (filterEnabled) 1f else 0.6f
     }
@@ -344,6 +445,9 @@ class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val LOG_TAG = "SafeStream"
+
+        /** 输入的不是网址时，按搜索词拼到这个前缀后交给沙箱。 */
+        const val SEARCH_PREFIX = "https://www.bing.com/search?q="
     }
 }
 

@@ -1,11 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  暗色优先的配色。视频类App 主流做法就是深色底 + 单一强调色，
+  长时间观看不刺眼，也让画面内容成为视觉焦点。
+-->
 <resources>
-    <color name="brand_primary">#1F6FEB</color>
-    <color name="brand_on_primary">#FFFFFF</color>
-    <color name="surface">#FFFBFF</color>
-    <color name="surface_dark">#101418</color>
-    <color name="on_surface">#1A1C1E</color>
-    <color name="on_surface_dark">#E3E2E6</color>
-    <color name="shield_on">#2E7D32</color>
-    <color name="shield_off">#B3261E</color>
+    <!-- 品牌蓝：只用于主操作与选中态 -->
+    <color name="brand">#4C8DFF</color>
+    <color name="brand_dim">#2C5FB8</color>
+    <color name="on_brand">#0A1120</color>
+
+    <!-- 表面层级 -->
+    <color name="bg_root">#0C0F14</color>
+    <color name="bg_surface">#141922</color>
+    <color name="bg_raised">#1C222D</color>
+    <color name="bg_input">#1F2632</color>
+
+    <!-- 文字 -->
+    <color name="text_primary">#E8ECF3</color>
+    <color name="text_secondary">#9AA5B8</color>
+    <color name="text_tertiary">#6B7688</color>
+
+    <!-- 语义色：克制使用 -->
+    <color name="ok">#4ADE80</color>
+    <color name="warn">#FBBF24</color>
+    <color name="danger">#F87171</color>
+
+    <color name="divider">#242B36</color>
 </resources>

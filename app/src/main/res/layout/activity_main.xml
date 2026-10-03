@@ -5,103 +5,119 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/bg_root"
     android:fitsSystemWindows="true"
     tools:context=".ui.MainActivity">
 
-    <!-- 地址栏 -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/urlInputLayout"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+    <!-- 顶部：搜索/地址栏。回车即提交，不需要额外的“加载”按钮 -->
+    <LinearLayout
+        android:id="@+id/topBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="10dp"
-        android:hint="@string/url_hint"
-        app:layout_constraintEnd_toStartOf="@id/shieldButton"
+        android:background="@color/bg_surface"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/urlInput"
-            android:layout_width="match_parent"
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/urlInputLayout"
+            style="@style/Widget.Material3.TextInputLayout.FilledBox.Dense"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:imeOptions="actionGo"
-            android:inputType="textUri"
-            android:maxLines="1"
-            android:singleLine="true" />
-    </com.google.android.material.textfield.TextInputLayout>
+            android:layout_weight="1"
+            android:hint="@string/search_hint"
+            app:boxBackgroundColor="@color/bg_input"
+            app:boxCornerRadiusBottomEnd="26dp"
+            app:boxCornerRadiusBottomStart="26dp"
+            app:boxCornerRadiusTopEnd="26dp"
+            app:boxCornerRadiusTopStart="26dp"
+            app:endIconMode="clear_text"
+            app:hintTextColor="@color/text_secondary">
 
-    <!-- 防护状态开关：常驻可见，让防护开没开一眼看得见 -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/shieldButton"
-        style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="8dp"
-        android:contentDescription="@string/action_shield"
-        android:text="@string/action_shield"
-        app:layout_constraintBottom_toBottomOf="@id/urlInputLayout"
-        app:layout_constraintEnd_toStartOf="@id/loadButton"
-        app:layout_constraintTop_toTopOf="@id/urlInputLayout" />
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/urlInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionSearch|flagNoExtractUi"
+                android:inputType="textUri"
+                android:maxLines="1"
+                android:singleLine="true"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_tertiary" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/loadButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="12dp"
-        android:text="@string/action_load"
-        app:layout_constraintBottom_toBottomOf="@id/urlInputLayout"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/urlInputLayout" />
+        <ImageButton
+            android:id="@+id/shieldButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_shield"
+            android:src="@drawable/ic_shield_on"
+            app:tint="@color/ok" />
+    </LinearLayout>
 
+    <!-- 诊断信息收进可展开的小条，不再常驻占用主界面 -->
     <TextView
         android:id="@+id/statusLine"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="16dp"
-        android:textAppearance="?attr/textAppearanceBodySmall"
-        android:textColor="@color/on_surface"
+        android:background="@color/bg_surface"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:textAppearance="@style/TextAppearance.SafeStream.Meta"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/urlInputLayout"
-        tools:text="沙箱运行中 · 已拦截 3 个跟踪请求" />
+        app:layout_constraintTop_toBottomOf="@id/topBar"
+        tools:text="沙箱运行中 · 已拦截 5 个跟踪请求" />
 
-    <!-- 播放器 -->
     <androidx.media3.ui.PlayerView
         android:id="@+id/playerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_margin="12dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
         android:background="@android:color/black"
+        app:layout_constraintDimensionRatio="H,16:9"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/statusLine"
-        app:layout_constraintDimensionRatio="H,16:9"
         app:resize_mode="fit"
         app:show_buffering="when_playing"
         app:use_controller="true" />
 
+    <!-- 播放列表标题行：数量 + 倍速 -->
     <TextView
         android:id="@+id/listHeader"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
-        android:textAppearance="?attr/textAppearanceTitleSmall"
-        app:layout_constraintBottom_toTopOf="@id/playlistList"
+        android:layout_marginTop="14dp"
+        android:text="@string/playlist_section"
+        android:textAppearance="@style/TextAppearance.SafeStream.Title"
         app:layout_constraintEnd_toStartOf="@id/speedButton"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/playerView"
-        tools:text="发现 3 个视频" />
+        app:layout_constraintTop_toBottomOf="@id/playerView" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/speedButton"
-        style="@style/Widget.Material3.Button.IconButton.Outlined"
+        style="@style/Widget.Material3.Button.TextButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="16dp"
+        android:layout_marginEnd="8dp"
+        android:minWidth="56dp"
         android:text="1.0x"
+        android:textColor="@color/brand"
         app:layout_constraintBottom_toBottomOf="@id/listHeader"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/listHeader" />
@@ -111,15 +127,16 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:clipToPadding="false"
-        android:paddingBottom="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/listHeader"
         tools:listitem="@layout/item_video" />
 
-    <!-- 空状态：列表常驻，用这个居中提示替代隐藏列表，避免标题被挤到底部 -->
+    <!-- 空状态只在真的没有内容时出现，不遮播放器 -->
     <TextView
         android:id="@+id/emptyState"
         android:layout_width="0dp"
@@ -128,11 +145,23 @@
         android:layout_marginEnd="32dp"
         android:gravity="center"
         android:text="@string/playlist_empty_hint"
-        android:textAppearance="?attr/textAppearanceBodyMedium"
-        android:textColor="?android:attr/textColorSecondary"
+        android:textAppearance="@style/TextAppearance.SafeStream.Meta"
         app:layout_constraintBottom_toBottomOf="@id/playlistList"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="@id/playlistList" />
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNav"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_surface"
+        app:itemIconTint="@color/nav_item_color"
+        app:itemTextColor="@color/nav_item_color"
+        app:labelVisibilityMode="labeled"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:menu="@menu/bottom_nav" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

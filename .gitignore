@@ -2,6 +2,7 @@
 # 早期版本用 /build 导致 app/build 下几千个构建产物被误纳入版本控制。
 build/
 .gradle/
+.kotlin/
 local.properties
 **/local.properties
 .idea/

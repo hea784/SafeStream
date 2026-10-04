@@ -2,8 +2,8 @@
 <resources>
     <string name="app_name">SafeStream</string>
     <string name="search_hint">粘贴网址或搜索</string>
-    <string name="nav_play">播放</string>
-    <string name="nav_browse">浏览</string>
+    <string name="nav_play">选集</string>
+    <string name="nav_browse">网页</string>
     <string name="playlist_section">播放列表</string>
     <string name="now_playing">正在播放</string>
     <string name="action_shield">防护</string>

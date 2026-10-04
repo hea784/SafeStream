@@ -79,7 +79,24 @@
         app:layout_constraintTop_toBottomOf="@id/topBar"
         tools:text="沙箱运行中 · 已拦截 5 个跟踪请求" />
 
-    <!-- 浏览页与播放页共用这一个容器，靠 visibility 切换 -->
+    <!-- 播放器常驻：浏览网页时它仍在上面播，下面换成内容 -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="12dp"
+        android:background="@android:color/black"
+        app:layout_constraintDimensionRatio="H,16:9"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusLine"
+        app:resize_mode="fit"
+        app:show_buffering="when_playing"
+        app:use_controller="true" />
+
+    <!-- 只有下方这一块在"列表"与"网页"之间切换，播放器始终留在上面 -->
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="0dp"
@@ -87,7 +104,7 @@
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statusLine">
+        app:layout_constraintTop_toBottomOf="@id/playerView">
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/playPage"
@@ -95,22 +112,6 @@
             android:layout_height="match_parent"
             android:visibility="gone"
             tools:visibility="visible">
-
-            <androidx.media3.ui.PlayerView
-                android:id="@+id/playerView"
-                android:layout_width="0dp"
-                android:layout_height="0dp"
-                android:layout_marginStart="12dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="12dp"
-                android:background="@android:color/black"
-                app:layout_constraintDimensionRatio="H,16:9"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent"
-                app:resize_mode="fit"
-                app:show_buffering="when_playing"
-                app:use_controller="true" />
 
             <LinearLayout
                 android:id="@+id/listHeaderRow"
@@ -123,7 +124,7 @@
                 android:paddingEnd="8dp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/playerView">
+                app:layout_constraintTop_toTopOf="parent">
 
                 <TextView
                     android:id="@+id/listHeader"

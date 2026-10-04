@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
 
     private val submission = UrlSubmission()
     private val playlist = PlaylistStore()
+    private lateinit var fullscreen: FullscreenController
 
     private var videos: List<VideoItem> = emptyList()
     private var currentIndex = RecyclerView.NO_POSITION
@@ -53,6 +54,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 全屏时返回键先退出全屏，而不是直接退出 App
+        onBackPressedDispatcher.addCallback(this, backHandler)
 
         history = HistoryStore(this)
         adapter = PlaylistAdapter { index, item -> playAt(index, item) }
@@ -88,6 +91,18 @@ class MainActivity : AppCompatActivity() {
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
         binding.speedButton.setOnClickListener { cycleSpeed() }
+        fullscreen = FullscreenController(
+            activity = this,
+            player = binding.playerView,
+            chrome = listOf(
+                binding.topBar,
+                binding.statusLine,
+                binding.bottomNav,
+                binding.contentContainer,
+            ),
+        )
+        // 点画面切换全屏；控件条自身仍由 PlayerView 处理，不受影响
+        binding.playerView.setOnClickListener { fullscreen.toggle() }
 
         binding.bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
@@ -392,6 +407,18 @@ class MainActivity : AppCompatActivity() {
         val item = videos.getOrNull(currentIndex) ?: return
         if (player.isPlaying) {
             history.saveProgress(item.url, player.currentPosition, player.duration)
+        }
+    }
+
+    private val backHandler = object : androidx.activity.OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() {
+            if (fullscreen.isFullscreen) {
+                fullscreen.toggle()
+            } else {
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+            }
         }
     }
 

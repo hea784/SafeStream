@@ -5,16 +5,18 @@ import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
-// 播放器全屏：只看片，界面全部让位。
-// 只放大播放器，不把网页一起放大 —— 看剧时网页反而要缩着才顺手。
-// 退出用返回键或再次点击播放器；不用滑动，避免和播放器进度条拖动冲突。
+// 播放器全屏：把播放器从迷你条搬进全屏容器，退出再搬回来。
+// 同一个 PlayerView 实例在两个容器间移动 —— SurfaceView 换父容器会重建，
+// 表现为一瞬间黑屏，可接受；用两个 PlayerView 则要管理两份 player 实例，更糟。
 class FullscreenController(
     private val activity: Activity,
-    private val player: View,
-    private val chrome: List<View>,
+    private val playerView: View,
+    private val miniSlot: FrameLayout,
+    private val fullscreenContainer: FrameLayout,
 ) {
 
     var isFullscreen: Boolean = false
@@ -30,8 +32,15 @@ class FullscreenController(
         isFullscreen = true
         restoreOrientation = activity.requestedOrientation
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        stretch(player)
-        chrome.forEach { it.visibility = View.GONE }
+        (playerView.parent as? ViewGroup)?.removeView(playerView)
+        fullscreenContainer.addView(
+            playerView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        fullscreenContainer.visibility = View.VISIBLE
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setSystemBarsHidden(true)
     }
@@ -40,30 +49,20 @@ class FullscreenController(
         isFullscreen = false
         setSystemBarsHidden(false)
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        chrome.forEach { it.visibility = View.VISIBLE }
-        // 交回 XML 里的 16:9 约束重新测量
-        player.layoutParams = player.layoutParams.apply {
-            width = 0
-            height = 0
-        }
+        fullscreenContainer.removeView(playerView)
+        miniSlot.addView(
+            playerView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        fullscreenContainer.visibility = View.GONE
         activity.requestedOrientation = restoreOrientation
     }
 
-    private fun stretch(v: View) {
-        v.layoutParams = v.layoutParams.apply {
-            width = ViewGroup.LayoutParams.MATCH_PARENT
-            height = ViewGroup.LayoutParams.MATCH_PARENT
-        }
-        (v.parent as? ViewGroup)?.let { p ->
-            p.layoutParams = p.layoutParams.apply {
-                width = ViewGroup.LayoutParams.MATCH_PARENT
-                height = ViewGroup.LayoutParams.MATCH_PARENT
-            }
-        }
-    }
-
     private fun setSystemBarsHidden(hidden: Boolean) {
-        val c = WindowInsetsControllerCompat(activity.window, player)
+        val c = WindowInsetsControllerCompat(activity.window, fullscreenContainer)
         if (hidden) {
             c.hide(WindowInsetsCompat.Type.systemBars())
             c.systemBarsBehavior =

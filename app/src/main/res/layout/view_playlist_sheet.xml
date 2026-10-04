@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  选集浮层：从底部拉起，覆盖在网页之上。
+  不再和网页做标签切换 —— 一个屏幕里两层内容，用浮层表达主次。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sheet"
+    android:orientation="vertical"
+    android:paddingBottom="16dp">
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/bg_sheet_handle" />
+    <TextView
+        android:id="@+id/sheetTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:textAppearance="@style/TextAppearance.SafeStream.Title"
+        tools:text="播放列表" />
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="200dp">
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/sheetList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+            tools:listitem="@layout/item_video" />
+        <TextView
+            android:id="@+id/sheetEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:gravity="center"
+            android:textAppearance="@style/TextAppearance.SafeStream.Meta"
+            tools:text="这个页面里还没找到视频" />
+    </FrameLayout>
+</LinearLayout>

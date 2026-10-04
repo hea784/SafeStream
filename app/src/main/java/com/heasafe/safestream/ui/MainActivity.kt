@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.heasafe.safestream.R
 import com.heasafe.safestream.showCrashIfAny
 import com.heasafe.safestream.data.HistoryStore
@@ -36,6 +37,9 @@ class MainActivity : AppCompatActivity() {
     private val submission = UrlSubmission()
     private val playlist = PlaylistStore()
     private lateinit var fullscreen: FullscreenController
+    private lateinit var playerView: androidx.media3.ui.PlayerView
+    private lateinit var sheet: BottomSheetDialog
+    private lateinit var sheetAdapter: PlaylistAdapter
 
     private var videos: List<VideoItem> = emptyList()
     private var currentIndex = RecyclerView.NO_POSITION
@@ -59,7 +63,13 @@ class MainActivity : AppCompatActivity() {
 
         history = HistoryStore(this)
         adapter = PlaylistAdapter { index, item -> playAt(index, item) }
-        binding.playlistList.adapter = adapter
+        sheetAdapter = PlaylistAdapter { index, item ->
+            sheet.dismiss()
+            playAt(videos.indexOf(item), item)
+        }
+        sheet = BottomSheetDialog(this)
+        sheet.setContentView(R.layout.view_playlist_sheet)
+        sheet.findViewById<RecyclerView>(R.id.sheetList)!!.adapter = sheetAdapter
 
         sandbox = WebSandbox(
             context = this,
@@ -74,7 +84,6 @@ class MainActivity : AppCompatActivity() {
         sandbox.filterEnabled = filterEnabled
         sandbox.onFatal = { binding.statusLine.text = getString(R.string.render_gone) }
         // 用沙箱自己的 WebView 替换布局里的占位 ViewView
-        (binding.browsePage.parent as? ViewGroup)?.removeView(binding.browsePage)
         binding.contentContainer.addView(
             sandbox.view,
             FrameLayout.LayoutParams(
@@ -90,28 +99,27 @@ class MainActivity : AppCompatActivity() {
         }
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
-        binding.speedButton.setOnClickListener { cycleSpeed() }
-        fullscreen = FullscreenController(
-            activity = this,
-            player = binding.playerView,
-            chrome = listOf(
-                binding.topBar,
-                binding.statusLine,
-                binding.bottomNav,
-                binding.contentContainer,
+        binding.miniSpeed.setOnClickListener { cycleSpeed() }
+        // 播放器由代码创建，才能在迷你条与全屏容器之间搬运
+        playerView = androidx.media3.ui.PlayerView(this).apply {
+            useController = true
+            setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+        }
+        binding.miniVideoSlot.addView(
+            playerView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
-        // 点画面切换全屏；控件条自身仍由 PlayerView 处理，不受影响
-        binding.playerView.setOnClickListener { fullscreen.toggle() }
-
-        binding.bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_play -> { showPage(browse = false); true }
-                R.id.nav_browse -> { showPage(browse = true); true }
-                else -> false
-            }
-        }
-        binding.bottomNav.selectedItemId = R.id.nav_play
+        fullscreen = FullscreenController(
+            activity = this,
+            playerView = playerView,
+            miniSlot = binding.miniVideoSlot,
+            fullscreenContainer = binding.fullscreenContainer,
+        )
+        binding.miniPlayer.setOnClickListener { fullscreen.toggle() }
+        binding.fabPlaylist.setOnClickListener { sheet.show() }
 
         updateShieldUi()
         updatePlaylistUi()
@@ -120,7 +128,7 @@ class MainActivity : AppCompatActivity() {
         showCrashIfAny()
 
         player = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
-            binding.playerView.player = it
+            playerView.player = it
             it.addListener(playerListener)
         }
     }
@@ -146,19 +154,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 切换播放页 / 浏览页。WebView 一直活着，切回来时状态不丢。 */
-    private fun showPage(browse: Boolean) {
-        binding.playPage.visibility = if (browse) View.GONE else View.VISIBLE
-        sandbox.view.visibility = if (browse) View.VISIBLE else View.GONE
-        if (browse) {
-            val url = lastSandboxUrl
-            if (url.isNullOrBlank()) {
-                toast(getString(R.string.browse_need_url))
-                binding.bottomNav.selectedItemId = R.id.nav_play
-            } else if (!sandboxRunning) {
-                openSandbox()
-            }
+    /** 网页常驻，选集走底部浮层 —— 这里只负责把沙箱拉起来。 */
+    private fun ensureSandboxRunning() {
+        val url = lastSandboxUrl
+        if (url.isNullOrBlank()) {
+            toast(getString(R.string.browse_need_url))
+            return
         }
+        if (!sandboxRunning) openSandbox()
     }
 
     private fun submitUrl() {
@@ -200,8 +203,7 @@ class MainActivity : AppCompatActivity() {
         sandbox.filterEnabled = filterEnabled
         sandbox.load(url, insecureHost)
         sandboxRunning = true
-        showPage(browse = true)
-        binding.bottomNav.selectedItemId = R.id.nav_browse
+        binding.browseHint.visibility = View.GONE
     }
 
     private fun openSandbox() {
@@ -289,8 +291,6 @@ class MainActivity : AppCompatActivity() {
             toast(getString(R.string.no_playable_source))
             return
         }
-        showPage(browse = false)
-        binding.bottomNav.selectedItemId = R.id.nav_play
         playAt(videos.indexOf(target), target)
     }
 
@@ -367,7 +367,8 @@ class MainActivity : AppCompatActivity() {
         val next = SPEEDS[(idx + 1) % SPEEDS.size]
         player.setPlaybackSpeed(next)
         val label = formatSpeed(next)
-        binding.speedButton.text = label
+        binding.miniSpeed.text = label
+        binding.miniSpeed.visibility = View.VISIBLE
         toast(getString(R.string.speed_label, label))
     }
 
@@ -390,12 +391,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePlaylistUi() {
-        binding.listHeader.text = if (videos.isEmpty()) {
-            getString(R.string.playlist_section)
-        } else {
-            getString(R.string.playlist_title, PlaylistStore.playableCount(videos))
+        val n = PlaylistStore.playableCount(videos)
+        binding.fabPlaylist.text = getString(R.string.fab_count, n)
+        binding.fabPlaylist.visibility = if (videos.isEmpty()) View.INVISIBLE else View.VISIBLE
+        sheetAdapter.submitList(videos)
+        sheetAdapter.playingIndex = currentIndex
+        sheet.findViewById<android.widget.TextView>(R.id.sheetTitle)!!.text =
+            getString(R.string.playlist_title, n)
+        sheet.findViewById<android.widget.TextView>(R.id.sheetEmpty)!!.visibility =
+            if (videos.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    /** 有东西在播时才出现迷你播放器，点它进全屏。 */
+    private fun updateMiniPlayer() {
+        val has = videos.getOrNull(currentIndex) != null
+        binding.miniPlayer.visibility = if (has) View.VISIBLE else View.GONE
+        binding.miniTitle.text = videos.getOrNull(currentIndex)?.title.orEmpty()
+        if (!fullscreen.isFullscreen) {
+            binding.miniSpeed.visibility = if (has) View.VISIBLE else View.GONE
+            binding.miniSpeed.text = formatSpeed(player.playbackParameters.speed)
         }
-        binding.emptyState.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun formatMs(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
@@ -423,7 +438,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        binding.playerView.player = null
+        playerView.player = null
         player.release()
         sandbox.destroy()
         super.onDestroy()

@@ -8,8 +8,6 @@
     android:background="@color/bg_root"
     android:fitsSystemWindows="true"
     tools:context=".ui.MainActivity">
-
-    <!-- 顶部：搜索栏。回车即提交，不需要额外的"加载"按钮 -->
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="0dp"
@@ -24,7 +22,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
-
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/urlInputLayout"
             style="@style/Widget.Material3.TextInputLayout.FilledBox.Dense"
@@ -39,7 +36,6 @@
             app:boxCornerRadiusTopStart="26dp"
             app:endIconMode="clear_text"
             app:hintTextColor="@color/text_secondary">
-
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/urlInput"
                 android:layout_width="match_parent"
@@ -51,7 +47,6 @@
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_tertiary" />
         </com.google.android.material.textfield.TextInputLayout>
-
         <ImageButton
             android:id="@+id/shieldButton"
             android:layout_width="44dp"
@@ -62,7 +57,6 @@
             android:src="@drawable/ic_shield_on"
             app:tint="@color/ok" />
     </LinearLayout>
-
     <TextView
         android:id="@+id/statusLine"
         android:layout_width="0dp"
@@ -72,130 +66,94 @@
         android:maxLines="1"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:paddingBottom="8dp"
+        android:paddingBottom="6dp"
         android:textAppearance="@style/TextAppearance.SafeStream.Meta"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/topBar"
         tools:text="沙箱运行中 · 已拦截 5 个跟踪请求" />
-
-    <!-- 播放器常驻：浏览网页时它仍在上面播，下面换成内容 -->
-    <androidx.media3.ui.PlayerView
-        android:id="@+id/playerView"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="10dp"
-        android:layout_marginEnd="12dp"
-        android:background="@android:color/black"
-        app:layout_constraintDimensionRatio="H,16:9"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statusLine"
-        app:resize_mode="fit"
-        app:show_buffering="when_playing"
-        app:use_controller="true" />
-
-    <!-- 只有下方这一块在"列表"与"网页"之间切换，播放器始终留在上面 -->
+    <!-- 网页常驻主区域：不再和选集做标签切换 -->
     <FrameLayout
         android:id="@+id/contentContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@id/bottomNav"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/playerView">
-
-        <androidx.constraintlayout.widget.ConstraintLayout
-            android:id="@+id/playPage"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="gone"
-            tools:visibility="visible">
-
-            <LinearLayout
-                android:id="@+id/listHeaderRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="16dp"
-                android:paddingTop="10dp"
-                android:paddingEnd="8dp"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent">
-
-                <TextView
-                    android:id="@+id/listHeader"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/playlist_section"
-                    android:textAppearance="@style/TextAppearance.SafeStream.Title" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/speedButton"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="56dp"
-                    android:text="1.0x"
-                    android:textColor="@color/brand" />
-            </LinearLayout>
-
-            <FrameLayout
-                android:id="@+id/listContainer"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/listHeaderRow">
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/playlistList"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:clipToPadding="false"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="8dp"
-                    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
-                    tools:listitem="@layout/item_video" />
-
-                <TextView
-                    android:id="@+id/emptyState"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center"
-                    android:layout_marginStart="32dp"
-                    android:layout_marginEnd="32dp"
-                    android:gravity="center"
-                    android:text="@string/playlist_empty_hint"
-                    android:textAppearance="@style/TextAppearance.SafeStream.Meta" />
-            </FrameLayout>
-        </androidx.constraintlayout.widget.ConstraintLayout>
-
-        <WebView
-            android:id="@+id/browsePage"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@android:color/black"
-            android:visibility="gone"
-            tools:visibility="visible" />
-    </FrameLayout>
-
-    <com.google.android.material.bottomnavigation.BottomNavigationView
-        android:id="@+id/bottomNav"
-        android:layout_width="0dp"
+        app:layout_constraintTop_toBottomOf="@id/statusLine" />
+    <TextView
+        android:id="@+id/browseHint"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:background="@color/bg_surface"
-        app:itemIconTint="@color/nav_item_color"
-        app:itemTextColor="@color/nav_item_color"
-        app:labelVisibilityMode="labeled"
+        android:gravity="center"
+        android:text="@string/browse_need_url"
+        android:textAppearance="@style/TextAppearance.SafeStream.Meta"
+        app:layout_constraintBottom_toBottomOf="@id/contentContainer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/contentContainer" />
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/fabPlaylist"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:text="0 个视频"
+        app:backgroundTint="@color/brand"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusLine" />
+    <!-- 迷你播放器：播放时出现，点它进全屏 -->
+    <LinearLayout
+        android:id="@+id/miniPlayer"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_sheet"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:menu="@menu/bottom_nav" />
-
+        tools:visibility="visible">
+        <FrameLayout
+            android:id="@+id/miniVideoSlot"
+            android:layout_width="72dp"
+            android:layout_height="40dp" />
+        <TextView
+            android:id="@+id/miniTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="@style/TextAppearance.SafeStream.Title"
+            tools:text="第 3 集" />
+        <TextView
+            android:id="@+id/miniSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:padding="8dp"
+            android:text="1.0x"
+            android:textColor="@color/brand"
+            android:visibility="gone" />
+    </LinearLayout>
+    <!-- 全屏容器：进入全屏时把播放器搬进来，退出再搬回 miniVideoSlot -->
+    <FrameLayout
+        android:id="@+id/fullscreenContainer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="@android:color/black"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>

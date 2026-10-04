@@ -56,11 +56,18 @@ class PlaylistStoreTest {
     }
 
     @Test
-    fun `切换剧集后选集被清掉只留该集媒体`() {
+    fun `媒体到达时不得抹掉本页已上报的选集`() {
+        // 真机崩溃前的实测：切到第 2 集后选集整个消失，点不到第 3 集。
+        // 原因就是 mergeVideos 把选集过滤掉了 —— 而"换页要清旧选集"
+        // 这件事 loadUrl 已经做过一次，不需要在合并时再做一遍。
         val store = PlaylistStore()
         store.mergeEpisodes(emptyList(), listOf(episode("p/1", 1), episode("p/2", 2)))
-        val afterSwitch = store.mergeVideos(store.state, listOf(media("m3u8://ep2")))
-        assertEquals(listOf("m3u8://ep2"), afterSwitch.map { it.url })
+        val afterMedia = store.mergeVideos(store.state, listOf(media("m3u8://ep2")))
+        assertEquals(
+            "选集必须保留，用户才能继续点下一集",
+            listOf("p/1", "p/2", "m3u8://ep2"),
+            afterMedia.map { it.url },
+        )
     }
 
     @Test

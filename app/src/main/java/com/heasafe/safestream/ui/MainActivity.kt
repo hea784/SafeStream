@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.heasafe.safestream.R
+import com.heasafe.safestream.showCrashIfAny
 import com.heasafe.safestream.data.HistoryStore
 import com.heasafe.safestream.databinding.ActivityMainBinding
 import com.heasafe.safestream.model.VideoItem
@@ -101,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         updatePlaylistUi()
         binding.statusLine.text = getString(R.string.status_idle)
         reportWebViewCapability()
+        showCrashIfAny()
 
         player = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
             binding.playerView.player = it
@@ -285,9 +287,11 @@ class MainActivity : AppCompatActivity() {
                 return
             }
         }
+        loadUrl(item.url, insecureHostAllowed)
+        // 必须在 loadUrl 之后设置：loadUrl 开头会把 pendingEpisode 清空，
+        // 之前放在前面导致自动播放在任何情况下都不会触发。
         pendingEpisode = item
         toast("正在加载第 ${item.episodeNo} 集")
-        loadUrl(item.url, insecureHostAllowed)
     }
 
     private fun playAt(index: Int, item: VideoItem) {

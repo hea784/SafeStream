@@ -20,10 +20,10 @@ HTML_HEAD = """<!DOCTYPE html>
   <h1>剧集夹具</h1>
   <video id="v" style="width:100%;max-width:480px;background:#000" controls></video>
   <div class="hg-web-play__ep-grid">
-    <a class="hg-web-play__ep is-active" href="ep-1/" data-ep-id="1">01</a>
-    <a class="hg-web-play__ep" href="ep-2/" data-ep-id="2">02</a>
-    <a class="hg-web-play__ep" href="ep-3/" data-ep-id="3">03</a>
-    <a class="hg-web-play__ep" href="ep-4/" data-ep-id="4">04</a>
+    <a class="hg-web-play__ep is-active" href="/ep-1/" data-ep-id="1">01</a>
+    <a class="hg-web-play__ep" href="/ep-2/" data-ep-id="2">02</a>
+    <a class="hg-web-play__ep" href="/ep-3/" data-ep-id="3">03</a>
+    <a class="hg-web-play__ep" href="/ep-4/" data-ep-id="4">04</a>
   </div>
   <div class="xg-fs-eps__row">
     <button class="xg-fs-eps__item is-active" data-fs-ep="1">01</button>

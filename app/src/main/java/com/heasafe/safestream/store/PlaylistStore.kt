@@ -19,13 +19,14 @@ class PlaylistStore {
     /**
      * 合并一批媒体。
      *
-     * 换页之后旧的选集条目不再有意义 —— 用户已经点了某一集，
-     * 留着一部剧的选集配另一部的媒体会让人点错。
+     * **保留选集条目。** 曾经在这里把选集过滤掉，理由是"换页后旧选集该清掉"——
+     * 但换页时 loadUrl 已经整体清空过一次，页面自己上报的选集随后到达，
+     * 却被这条规则抹掉。实测后果：切到第 2 集后选集整个消失，点不到第 3 集。
      */
     fun mergeVideos(current: List<VideoItem>, incoming: List<VideoItem>): List<VideoItem> {
         val merged = LinkedHashMap<String, VideoItem>()
-        current.filterNot { it.isEpisode }.forEach { merged[it.url] = it }
-        incoming.filterNot { it.isEpisode }.forEach { merged.putIfAbsent(it.url, it) }
+        current.forEach { merged[it.url] = it }
+        incoming.forEach { merged.putIfAbsent(it.url, it) }
         val next = merged.values.toList()
         state = next
         return next

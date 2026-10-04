@@ -4,12 +4,9 @@
     <string name="search_hint">粘贴网址或搜索</string>
     <string name="nav_play">选集</string>
     <string name="nav_browse">网页</string>
-    <string name="playlist_section">播放列表</string>
     <string name="now_playing">正在播放</string>
     <string name="action_shield">防护</string>
     <string name="playlist_title">发现 %1$d 个视频</string>
-    <string name="playlist_title_found_none">播放列表</string>
-    <string name="playlist_empty_hint">在上方粘贴网址或输入关键词，按回车即可。&#10;页面会在受限环境中打开，这里会列出里面能找到的所有视频，点哪条播哪条。</string>
     <string name="warn_insecure_title">该站点未加密</string>
     <string name="warn_insecure_body">%1$s 使用明文 HTTP 传输，途中可能被篡改。确定仍要加载吗？</string>
     <string name="warn_insecure_ok">仍要加载</string>
@@ -18,13 +15,6 @@
     <string name="speed_label">倍速 %1$s</string>
     <string name="resume_toast">已从 %1$s 继续播放</string>
     <string name="autoplay_next">自动连播 · 第 %1$d 集</string>
-    <string name="shield_count">防护 · 本次已处理 %1$d 项</string>
-    <string name="shield_switch">防护拦截（广告与跟踪）</string>
-    <string name="shield_events_empty">本次会话还没有安全事件</string>
-    <string name="mini_play">播放</string>
-    <string name="mini_pause">暂停</string>
-    <string name="meta_playing">播放中</string>
-    <string name="meta_watched">看过</string>
     <string name="status_idle">待输入网址</string>
     <string name="capability_ok">网页内核 %1$s · 选集与视频发现可用</string>
     <string name="capability_weak">网页内核 %1$s 过旧，无法识别选集与视频（需 WebView 88+）</string>
@@ -34,8 +24,13 @@
     <string name="fab_desc">打开选集</string>
     <string name="settings">设置</string>
     <string name="settings_clear">清理数据</string>
-    <string name="mini_player_hint">正在播放</string>
-    <string name="sheet_empty">这个页面里还没找到视频</string>
+    <string name="shield_count">防护 · 本次已处理 %1$d 项</string>
+    <string name="shield_switch">防护拦截（广告与跟踪）</string>
+    <string name="shield_events_empty">本次会话还没有安全事件</string>
+    <string name="mini_play">播放</string>
+    <string name="mini_pause">暂停</string>
+    <string name="meta_playing">播放中</string>
+    <string name="meta_watched">看过</string>
     <string name="render_gone">网页渲染进程异常，正在重建</string>
     <string name="no_playable_source">这个视频没有可用的播放地址（可能是 DRM 或 blob 流）</string>
 </resources>

@@ -192,85 +192,22 @@ class WebSandbox(
     }
 
     private fun dispatch(payload: String) {
-        val root = runCatching { JSONObject(payload) }.getOrNull() ?: return
-        when {
-            root.optString("kind") == "drm" -> {
-                drmSystem = root.optString("url").substringAfter("drm:").ifBlank { "DRM" }
-                report("检测到加密视频（$drmSystem），这类内容无法播放")
-                true
+        // 解析规则在 ScannerMessageParser（纯逻辑，10 个 JVM 用例覆盖每种消息形态）
+        when (val msg = parser.parse(payload)) {
+            is ScanMessage.Videos -> onMain { onVideosFound(msg.json) }
+            is ScanMessage.Episodes -> onMain { onEpisodesFound(msg.json) }
+            is ScanMessage.Drm -> {
+                drmSystem = msg.system
+                if (msg.system != null) {
+                    report("检测到加密视频（${msg.system}），这类内容无法播放")
+                }
             }
-            root.optString("kind") == "nodrm" -> {
-                drmSystem = null
-                true
-            }
-            root.has("url") && !root.has("batch") -> onNetworkHit(root)
-            root.has("episodes") -> onEpisodes(root.optJSONArray("episodes"))
-            else -> onBatch(root.optJSONArray("batch"))
+            ScanMessage.PlayFound -> onMain { onVideosFound(PLAY_FOUND_MARKER) }
+            ScanMessage.Ignore -> Unit
         }
     }
 
-    private fun onBatch(items: JSONArray?) {
-        if (items == null || items.length() == 0) return
-        val out = JSONArray()
-        for (i in 0 until items.length()) {
-            val o = items.optJSONObject(i) ?: continue
-            val url = o.optString("url")
-            if (!UrlGuard.allowNavigation(url)) continue
-            out.put(
-                JSONObject().apply {
-                    put("url", url)
-                    put("title", o.optString("title"))
-                    put("mimeType", o.optString("mimeType"))
-                    put("durationMs", o.optLong("durationMs"))
-                    put("sourcePage", o.optString("sourcePage"))
-                },
-            )
-        }
-        if (out.length() > 0) onMain { onVideosFound(out.toString()) }
-    }
-
-    private fun onEpisodes(items: JSONArray?) {
-        if (items == null || items.length() == 0) return
-        val out = JSONArray()
-        for (i in 0 until items.length()) {
-            val o = items.optJSONObject(i) ?: continue
-            val url = o.optString("url")
-            if (!UrlGuard.allowNavigation(url)) continue
-            out.put(
-                JSONObject().apply {
-                    put("url", url)
-                    put("title", o.optString("title"))
-                    put("mimeType", "")
-                    put("durationMs", 0)
-                    put("sourcePage", o.optString("page"))
-                    put("kind", "EPISODE")
-                    put("episodeNo", o.optInt("ep"))
-                },
-            )
-        }
-        if (out.length() > 0) onMain { onEpisodesFound(out.toString()) }
-    }
-
-    private fun onNetworkHit(o: JSONObject) {
-        val url = o.optString("url")
-        val kind = o.optString("kind")
-        if (kind == "mse" || url.startsWith("mse:")) return
-
-        // 用户点了 blob 流：播本页已发现的媒体。地址本身在页面外没有意义，
-        // 但点击已经表达了播放意图。
-        if (kind == "play-found") {
-            onMain { onVideosFound(PLAY_FOUND_MARKER) }
-            return
-        }
-        if (!UrlGuard.allowNavigation(url)) return
-        onBatch(JSONArray().put(JSONObject().apply {
-            put("url", url)
-            put("title", "")
-            put("mimeType", "")
-            put("durationMs", 0)
-            put("sourcePage", o.optString("page"))
-        }))
-    }
+    private val parser = ScannerMessageParser()
 
     companion object {
         const val TAG = "SafeStreamSecurity"

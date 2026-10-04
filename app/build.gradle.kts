@@ -27,8 +27,8 @@ android {
         applicationId = "com.heasafe.safestream"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.8.0"
+        versionCode = 12
+        versionName = "0.9.0"
         resourceConfigurations += listOf("zh", "en")
         // 默认关闭：SSRF 防护。debug 构建会覆盖为 true 作为本地测试接缝。
         buildConfigField("boolean", "ALLOW_PRIVATE_HOSTS", "false")
@@ -99,6 +99,7 @@ dependencies {
     implementation(libs.media3.session)
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
 
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.core)

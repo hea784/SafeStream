@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var securityLog: com.heasafe.safestream.core.SecurityLog
     private lateinit var adapter: PlaylistAdapter
     private lateinit var sandbox: WebSandbox
-    private lateinit var player: androidx.media3.exoplayer.ExoPlayer
+    private lateinit var playback: PlaybackSession
 
     private val submission = UrlSubmission()
     private val playlist = PlaylistStore()
@@ -119,11 +119,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.shieldButton.setOnClickListener { showShieldPanel() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
-        binding.miniSpeed.setOnClickListener { cycleSpeed() }
-        binding.miniToggle.setOnClickListener {
-            if (player.isPlaying) player.pause() else player.play()
-        }
-        progressHandler.post(progressTick)
+        binding.miniSpeed.setOnClickListener { playback.cycleSpeed() }
         // 点状态行可重新展开，否则提示淡出后就看不到了
         binding.statusLine.setOnClickListener { showStatusBriefly() }
         binding.settingsButton.setOnClickListener { showSettings() }
@@ -155,10 +151,28 @@ class MainActivity : AppCompatActivity() {
         reportWebViewCapability()
         showCrashIfAny()
 
-        player = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
-            playerView.player = it
-            it.addListener(playerListener)
-        }
+        playback = PlaybackSession(
+            playerView = playerView,
+            binding = binding,
+            history = history,
+            playingUrl = { playingUrl },
+            drmSystem = { sandbox.drmSystem },
+            onEnded = ::onPlaybackEnded,
+        )
+    }
+
+    /**
+     * 本集播完：连播下一集（能找到下一集时）。
+     *
+     * 决策留在这一层——「要不要连播」取决于列表里有没有下一集
+     * （PlaylistStore.nextEpisode，纯逻辑已单测），播放器只负责报告"播完了"。
+     */
+    private fun onPlaybackEnded() {
+        val current = playingEpisode ?: return
+        val next = PlaylistStore.nextEpisode(videos, current.url) ?: return
+        binding.statusLine.text = getString(R.string.autoplay_next, next.episodeNo)
+        showStatusBriefly()
+        playEpisode(next)
     }
 
     /**
@@ -227,12 +241,6 @@ class MainActivity : AppCompatActivity() {
         binding.browseHint.visibility = View.GONE
     }
 
-    private fun openSandbox() {
-        val url = lastSandboxUrl ?: return
-        sandbox.load(url, insecureHostAllowed)
-        sandboxRunning = true
-    }
-
     private fun onSecurityEvent(message: String) {
         if (message.startsWith("已拦截")) blockedCount++
         securityLog.record(message)
@@ -267,39 +275,13 @@ class MainActivity : AppCompatActivity() {
 
     /** 防护面板（借鉴 Brave Shields）：本次会话的安全事件明细 + 开关 + 一键清理。 */
     private fun showShieldPanel() {
-        val panel = BottomSheetDialog(this)
-        panel.setContentView(R.layout.view_shield_sheet)
-        panel.findViewById<TextView>(R.id.shieldCount)!!.text =
-            getString(R.string.shield_count, securityLog.count())
-        val events = panel.findViewById<RecyclerView>(R.id.shieldList)!!
-        events.adapter = ShieldEventsAdapter(securityLog.all())
-        panel.findViewById<TextView>(R.id.shieldEmpty)!!.visibility =
-            if (securityLog.count() == 0) View.VISIBLE else View.GONE
-        val sw = panel.findViewById<Switch>(R.id.shieldSwitch)!!
-        sw.isChecked = filterEnabled
-        sw.setOnCheckedChangeListener { _, checked ->
-            if (checked != filterEnabled) toggleFilter()
-        }
-        panel.findViewById<Button>(R.id.shieldClear)!!.setOnClickListener {
-            panel.dismiss()
-            purgeEverything()
-        }
-        panel.show()
-    }
-
-    private inner class ShieldEventsAdapter(private var items: List<String>) :
-        RecyclerView.Adapter<ShieldEventsAdapter.VH>() {
-
-        inner class VH(val text: TextView) : RecyclerView.ViewHolder(text)
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
-            VH(LayoutInflater.from(parent.context).inflate(R.layout.item_security, parent, false) as TextView)
-
-        override fun getItemCount(): Int = items.size
-
-        override fun onBindViewHolder(holder: VH, position: Int) {
-            holder.text.text = items[position]
-        }
+        ShieldPanel.show(
+            activity = this,
+            log = securityLog,
+            filterEnabled = filterEnabled,
+            onToggleFilter = ::toggleFilter,
+            onClear = ::purgeEverything,
+        )
     }
 
     private fun toggleFilter() {
@@ -433,80 +415,9 @@ class MainActivity : AppCompatActivity() {
         if (item.url == playingUrl) return
         playingUrl = item.url
         adapter.playingIndex = index
-
-        val mediaItem = androidx.media3.common.MediaItem.Builder()
-            .setUri(item.url)
-            .setMediaId(item.url)
-            .setMimeType(
-                when {
-                    item.url.contains(".m3u8") ->
-                        androidx.media3.common.MimeTypes.APPLICATION_M3U8
-                    item.url.contains(".mpd") ->
-                        androidx.media3.common.MimeTypes.APPLICATION_MPD
-                    item.mimeType.isNotBlank() -> item.mimeType
-                    else -> null
-                },
-            )
-            .build()
-
-        player.setMediaItem(mediaItem)
-        val resumeAt = history.readProgress(item.url)
-        if (resumeAt > 3_000) {
-            player.seekTo(resumeAt)
-            toast(getString(R.string.resume_toast, formatMs(resumeAt)))
-        }
-        player.prepare()
-        player.playWhenReady = true
+        playback.play(item)
         // 全屏的唯一入口是迷你播放器，它默认 gone —— 不在这里点明就永远进不去全屏
         updateMiniPlayer()
-    }
-
-    private val playerListener = object : androidx.media3.common.Player.Listener {
-        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            val drm = sandbox.drmSystem
-            toast(
-                if (drm != null) {
-                    "该视频经过 $drm 加密，无法播放"
-                } else {
-                    "播放失败：${error.errorCodeName}"
-                },
-            )
-        }
-
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            updateMiniToggle()
-            if (!isPlaying) return
-            // 进度归属用地址不用索引：列表会因选集合并而重排，
-            // 索引在重排后指向别的条目（实测进度被记到选集页地址上）
-            val url = playingUrl ?: return
-            history.saveProgress(url, player.currentPosition, player.duration)
-        }
-
-        override fun onPlaybackStateChanged(state: Int) {
-            updateMiniToggle()
-            if (state != androidx.media3.common.Player.STATE_ENDED) return
-            val current = playingEpisode ?: return
-            val next = PlaylistStore.nextEpisode(videos, current.url) ?: return
-            binding.statusLine.text = getString(R.string.autoplay_next, next.episodeNo)
-            showStatusBriefly()
-            playEpisode(next)
-        }
-    }
-
-    private fun cycleSpeed() {
-        val idx = SPEEDS.indexOfFirst { it == player.playbackParameters.speed }
-            .takeIf { it >= 0 } ?: 0
-        val next = SPEEDS[(idx + 1) % SPEEDS.size]
-        player.setPlaybackSpeed(next)
-        val label = formatSpeed(next)
-        binding.miniSpeed.text = label
-        binding.miniSpeed.visibility = View.VISIBLE
-        toast(getString(R.string.speed_label, label))
-    }
-
-    private fun formatSpeed(speed: Float): String {
-        val text = if (speed % 1f == 0f) speed.toInt().toString() else speed.toString()
-        return "${text}x"
     }
 
     private fun updateShieldUi() {
@@ -547,52 +458,24 @@ class MainActivity : AppCompatActivity() {
         val item = playingItem()
         binding.miniPlayer.visibility = if (item != null) View.VISIBLE else View.GONE
         binding.miniTitle.text = item?.title.orEmpty()
-        updateMiniToggle()
+        playback.refreshToggleIcon()
         if (!fullscreen.isFullscreen) {
             binding.miniSpeed.visibility = if (item != null) View.VISIBLE else View.GONE
-            binding.miniSpeed.text = formatSpeed(player.playbackParameters.speed)
-        }
-    }
-
-    /** 迷你条上的播放/暂停按钮与系统状态保持一致。 */
-    private fun updateMiniToggle() {
-        val playing = player.isPlaying
-        binding.miniToggle.setImageResource(
-            if (playing) R.drawable.ic_pause else R.drawable.ic_play,
-        )
-        binding.miniToggle.contentDescription =
-            getString(if (playing) R.string.mini_pause else R.string.mini_play)
-    }
-
-    /** 迷你条底部进度条：半秒一跳；暂停时不刷新——进度本来就停着，
-     * 而持续 invalidate 会让界面永远不 idle（无障碍与 uiautomator 全被拖死）。 */
-    private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val progressTick = object : Runnable {
-        override fun run() {
-            if (binding.miniPlayer.visibility == View.VISIBLE &&
-                player.isPlaying &&
-                player.duration > 0
-            ) {
-                binding.miniProgress.max = player.duration.toInt().coerceAtLeast(1)
-                binding.miniProgress.progress =
-                    player.currentPosition.toInt().coerceIn(0, binding.miniProgress.max)
-            }
-            progressHandler.postDelayed(this, 500)
+            binding.miniSpeed.text = playback.speedLabel()
         }
     }
 
     /** 正在播的条目，按地址找而不是按位置找（列表会重排）。 */
     private fun playingItem(): VideoItem? = videos.firstOrNull { it.url == playingUrl }
 
-    private fun formatMs(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
-
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
     override fun onStop() {
         super.onStop()
         val url = playingUrl ?: return
-        if (player.isPlaying) {
-            history.saveProgress(url, player.currentPosition, player.duration)
+        val p = playback.player
+        if (p.isPlaying) {
+            history.saveProgress(url, p.currentPosition, p.duration)
         }
     }
 
@@ -609,9 +492,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        progressHandler.removeCallbacksAndMessages(null)
-        playerView.player = null
-        player.release()
+        playback.release()
         // 恢复安全契约第 14 条「退出即清」：架构合并时被静默丢掉过。
         // 必须在 destroy() 之前——之后 WebView 已销毁，purge 里的清缓存会炸。
         sandbox.purge()
@@ -622,6 +503,5 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         /** 状态行可见时长：提示而已，不该常驻挡视野。 */
         const val STATUS_VISIBLE_MS = 3500L
-        val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }

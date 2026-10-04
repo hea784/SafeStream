@@ -154,16 +154,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 网页常驻，选集走底部浮层 —— 这里只负责把沙箱拉起来。 */
-    private fun ensureSandboxRunning() {
-        val url = lastSandboxUrl
-        if (url.isNullOrBlank()) {
-            toast(getString(R.string.browse_need_url))
-            return
-        }
-        if (!sandboxRunning) openSandbox()
-    }
-
     private fun submitUrl() {
         val raw = binding.urlInput.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
@@ -347,6 +337,8 @@ class MainActivity : AppCompatActivity() {
         }
         player.prepare()
         player.playWhenReady = true
+        // 全屏的唯一入口是迷你播放器，它默认 gone —— 不在这里点明就永远进不去全屏
+        updateMiniPlayer()
     }
 
     private val playerListener = object : androidx.media3.common.Player.Listener {

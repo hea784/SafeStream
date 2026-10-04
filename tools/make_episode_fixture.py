@@ -45,7 +45,9 @@ SCRIPT = """
       var ms = new MediaSource();
       v.src = URL.createObjectURL(ms);
       ms.addEventListener('sourceopen', function () {
-        var sb = ms.addSourceBuffer('video/mp4');
+        // 必须是带 codecs 的合法 MIME，否则 WebView 抛 NotSupportedError，
+        // 媒体请求不会发出，整条"发现 -> 播放"链路都测不到
+        var sb = ms.addSourceBuffer('video/mp4; codecs=avc1.42E01E');
         fetch('clip1.mp4').then(function (r) { return r.arrayBuffer(); })
           .then(function (b) { try { sb.appendBuffer(b); } catch (e) {} });
       });

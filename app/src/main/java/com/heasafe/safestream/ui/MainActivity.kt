@@ -19,6 +19,7 @@ import com.heasafe.safestream.databinding.ActivityMainBinding
 import com.heasafe.safestream.model.VideoItem
 import com.heasafe.safestream.sandbox.WebSandbox
 import com.heasafe.safestream.store.PlaylistStore
+import com.heasafe.safestream.submit.SearchEngine
 import com.heasafe.safestream.submit.UrlSubmission
 import org.json.JSONArray
 
@@ -102,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         binding.miniSpeed.setOnClickListener { cycleSpeed() }
         // 点状态行可重新展开，否则提示淡出后就看不到了
         binding.statusLine.setOnClickListener { showStatusBriefly() }
+        binding.settingsButton.setOnClickListener { showSettings() }
         // 播放器由代码创建，才能在迷你条与全屏容器之间搬运
         playerView = androidx.media3.ui.PlayerView(this).apply {
             useController = true
@@ -163,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         if (raw.isEmpty()) return
         if (!submission.tryAcquire(raw, SystemClock.elapsedRealtime())) return
 
-        when (val outcome = UrlSubmission.resolve(raw)) {
+        when (val outcome = UrlSubmission.resolve(raw, searchEngine)) {
             is UrlSubmission.Outcome.Reject -> toast(outcome.reason)
             is UrlSubmission.Outcome.SearchUrl -> loadUrl(outcome.url, null)
             is UrlSubmission.Outcome.LoadUrl ->
@@ -242,6 +244,31 @@ class MainActivity : AppCompatActivity() {
         sandbox.filterEnabled = filterEnabled
         updateShieldUi()
         toast(if (filterEnabled) "已开启广告与跟踪拦截" else "已关闭拦截（不推荐）")
+    }
+
+    private val settingsPrefs
+        get() = getSharedPreferences("safestream_settings", MODE_PRIVATE)
+
+    private var searchEngine: SearchEngine
+        get() = SearchEngine.fromName(settingsPrefs.getString("engine", null))
+        set(v) = settingsPrefs.edit().putString("engine", v.name).apply()
+
+    /** 设置：搜索引擎、拦截状态、清理数据。之前这些没有入口，只能改代码。 */
+    private fun showSettings() {
+        val engines = SearchEngine.entries.toTypedArray()
+        val current = engines.indexOf(searchEngine)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings)
+            .setSingleChoiceItems(
+                engines.map { it.label }.toTypedArray(),
+                current,
+            ) { _, which ->
+                searchEngine = engines[which]
+                toast("搜索引擎：" + engines[which].label)
+            }
+            .setNeutralButton(R.string.settings_clear) { _, _ -> purgeEverything() }
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun purgeEverything() {
@@ -368,7 +395,14 @@ class MainActivity : AppCompatActivity() {
 
     private val playerListener = object : androidx.media3.common.Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            toast("播放失败：${error.errorCodeName}")
+            val drm = sandbox.drmSystem
+            toast(
+                if (drm != null) {
+                    "该视频经过 $drm 加密，无法播放"
+                } else {
+                    "播放失败：${error.errorCodeName}"
+                },
+            )
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {

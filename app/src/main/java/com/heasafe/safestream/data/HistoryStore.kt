@@ -28,12 +28,16 @@ class HistoryStore(context: Context) {
     }
 
     fun saveProgress(url: String, positionMs: Long, durationMs: Long) {
+        // 签名地址每轮都会换，记下来的进度永远匹配不上，不如不记
+        if (com.heasafe.safestream.core.UrlGuard.isEphemeral(url)) return
         // 快到尾声的进度没有续播价值
         if (durationMs > 0 && positionMs > durationMs * 0.95) return
         prefs.edit().putLong(progressKey(url), positionMs).apply()
     }
 
-    fun readProgress(url: String): Long = prefs.getLong(progressKey(url), 0L)
+    fun readProgress(url: String): Long =
+        if (com.heasafe.safestream.core.UrlGuard.isEphemeral(url)) 0L
+        else prefs.getLong(progressKey(url), 0L)
 
     fun clearAll() = prefs.edit().clear().apply()
 }

@@ -47,6 +47,14 @@ class WebSandbox(
     private var insecureAllowedHost: String? = null
 
     /**
+     * 页面声明的 DRM 系统（如 com.widevine.alpha）。
+     * 非空说明这站内容加密，原生播放器拿不到密钥，播不了 ——
+     * 这时要明确告诉用户，而不是让它停在黑屏上转圈。
+     */
+    var drmSystem: String? = null
+        private set
+
+    /**
      * WebView 的回调不一定在主线程。
      *
      * 真机（WebView 151）实测：`shouldInterceptRequest` 跑在 Chromium 的网络
@@ -178,6 +186,15 @@ class WebSandbox(
     private fun dispatch(payload: String) {
         val root = runCatching { JSONObject(payload) }.getOrNull() ?: return
         when {
+            root.optString("kind") == "drm" -> {
+                drmSystem = root.optString("url").substringAfter("drm:").ifBlank { "DRM" }
+                report("检测到加密视频（$drmSystem），这类内容无法播放")
+                true
+            }
+            root.optString("kind") == "nodrm" -> {
+                drmSystem = null
+                true
+            }
             root.has("url") && !root.has("batch") -> onNetworkHit(root)
             root.has("episodes") -> onEpisodes(root.optJSONArray("episodes"))
             else -> onBatch(root.optJSONArray("batch"))

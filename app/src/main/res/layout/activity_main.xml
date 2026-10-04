@@ -56,6 +56,14 @@
             android:contentDescription="@string/action_shield"
             android:src="@drawable/ic_shield_on"
             app:tint="@color/ok" />
+        <ImageButton
+            android:id="@+id/settingsButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings"
+            android:src="@drawable/ic_settings"
+            app:tint="@color/text_secondary" />
     </LinearLayout>
     <TextView
         android:id="@+id/statusLine"

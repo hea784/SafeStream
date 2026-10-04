@@ -23,6 +23,8 @@
     <string name="browse_need_url">先在上方输入一个网址</string>
     <string name="fab_count">%1$d 个视频</string>
     <string name="fab_desc">打开选集</string>
+    <string name="settings">设置</string>
+    <string name="settings_clear">清理数据</string>
     <string name="mini_player_hint">正在播放</string>
     <string name="sheet_empty">这个页面里还没找到视频</string>
     <string name="render_gone">网页渲染进程异常，正在重建</string>

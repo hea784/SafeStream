@@ -77,6 +77,28 @@ object UrlGuard {
 
     fun isInsecure(url: String) = url.startsWith("http://", ignoreCase = true)
 
+    /**
+     * 查询串里带签名/时效标记的地址。
+     *
+     * 这类地址过期后内容就变了，拿它当断点续播的 key 会永远匹配不上 ——
+     * 表现是"续播坏了"，其实只是地址换了一轮。遇到这类地址干脆不记进度。
+     *
+     * 只看查询串：路径里的 token 片段是长期标识，不代表会过期。
+     */
+    fun isEphemeral(url: String): Boolean {
+        val query = url.substringAfter('?', "").substringBefore('#')
+        if (query.isEmpty()) return false
+        return query.split('&').any { param ->
+            EPHEMERAL_KEYS.contains(param.substringBefore('=').trim().lowercase())
+        }
+    }
+
+    private val EPHEMERAL_KEYS = setOf(
+        "auth_key", "token", "sign", "signature", "expires", "policy",
+        "key-pair-id", "wssecret", "wmsauthsign", "x-amz-signature",
+        "x-oss-signature", "e", "t", "time",
+    )
+
     private fun isPrivateHost(host: String): Boolean {
         val h = host.lowercase()
         if (h == "localhost" || h.endsWith(".localhost") || h.endsWith(".local")) return true

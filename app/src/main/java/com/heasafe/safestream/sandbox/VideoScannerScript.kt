@@ -101,6 +101,28 @@ object VideoScannerScript {
         }, true);
       }
 
+      // ---- DRM 检测 ----
+      // 站点若用 Widevine 之类的 DRM，原生播放器拿不到密钥，
+      // 表现是"点开一片黑/转圈"且毫无提示。这里提前探一下，
+      // 让上层能明确告诉用户"这集加密了，播不了"，而不是让它干瞪眼。
+      function detectDrm() {
+        if (!navigator.requestMediaKeySystemAccess) return;
+        var systems = ['com.widevine.alpha', 'com.microsoft.playready', 'com.apple.fps'];
+        var found = null;
+        var tries = systems.length;
+        systems.forEach(function (key) {
+          navigator.requestMediaKeySystemAccess(key, [{ initDataTypes: ['cenc'] }], [])
+            .then(function () { if (!found) found = key; })
+            .catch(function () {})
+            .then(function () {
+              tries -= 1;
+              if (tries === 0) {
+                post(found ? 'drm:' + found : '', found ? 'drm' : 'nodrm');
+              }
+            });
+        });
+      }
+
       function pickTitle(el, idx) {
         var t = '';
         try {
@@ -235,6 +257,7 @@ object VideoScannerScript {
       if (document.readyState === 'complete' || document.readyState === 'interactive') {
         hookNet();
         hookClicks();
+        detectDrm();
         setTimeout(merge, 600);
         setTimeout(merge, 2500);
       } else {

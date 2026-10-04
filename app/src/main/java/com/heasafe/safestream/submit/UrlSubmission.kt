@@ -42,17 +42,14 @@ class UrlSubmission {
 
     companion object {
         const val DEFAULT_WINDOW_MS = 2000L
-        const val SEARCH_PREFIX = "https://www.bing.com/search?q="
 
-        fun resolve(raw: String): Outcome {
+        fun resolve(raw: String, engine: SearchEngine = SearchEngine.BING): Outcome {
             val input = raw.trim()
             if (input.isEmpty()) return Outcome.Reject("地址为空")
 
             // 没有 scheme、没有点号、含空格 —— 按搜索词处理
             if (looksLikeKeyword(input)) {
-                return Outcome.SearchUrl(
-                    SEARCH_PREFIX + java.net.URLEncoder.encode(input, "UTF-8"),
-                )
+                return Outcome.SearchUrl(engine.queryUrl(input))
             }
 
             return when (val v = UrlGuard.inspect(input)) {

@@ -4,13 +4,20 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <!--
-      手写而非图像生成：应用图标属于功能型视觉，需要精确几何。
-      扩散模型画不出干净利落的实心镂空（实测两次都退化成线框），
-      且 512² PNG 有 185KB，而这份矢量只有几百字节、缩放无损。
-      盾牌=安全防护，镂空三角=视频播放，两条产品线合成一个符号。
+      手写而非图像生成：应用图标是精确几何，扩散模型两次尝试都退化成线框。
+
+      设计语言取自今年主流视频 App（YouTube / Netflix / bilibili / Venera）：
+      纯色底 + 单一符号 + 粗笔画 + 无镂空。镂空与多元素在小尺寸下最先糊掉，
+      一个实心播放三角是最经得起缩放的表意。
+
+      圆角来自 strokeLineJoin=round 的描边叠加填充（三角形三个角都是
+      join，闭合路径无 cap），避免手写圆角弧线数据。重心 (54,54) 恰在
+      画布中心，含 4.5dp 描边扩张后全部落在 66dp 安全区内。
     -->
     <path
         android:fillColor="#FFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M54,26 L75,34.5 L75,55 C75,67.5 66.5,78 54,84 C41.5,78 33,67.5 33,55 L33,34.5 Z M48.5,44.5 L48.5,65 L65,54.75 Z" />
+        android:pathData="M40,33 L40,75 L82,54 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="9" />
 </vector>

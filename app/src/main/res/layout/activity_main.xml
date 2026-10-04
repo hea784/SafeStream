@@ -89,17 +89,36 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/statusLine" />
-    <TextView
+    <LinearLayout
         android:id="@+id/browseHint"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:text="@string/browse_need_url"
-        android:textAppearance="@style/TextAppearance.SafeStream.Meta"
+        android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="@id/contentContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/contentContainer" />
+        app:layout_constraintTop_toTopOf="@id/contentContainer">
+        <ImageView
+            android:layout_width="132dp"
+            android:layout_height="132dp"
+            android:contentDescription="@string/browse_need_url"
+            android:src="@drawable/empty_state" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:gravity="center"
+            android:text="@string/browse_need_url"
+            android:textAppearance="@style/TextAppearance.SafeStream.Title" />
+        <TextView
+            android:layout_width="280dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="@string/browse_hint_detail"
+            android:textAppearance="@style/TextAppearance.SafeStream.Meta" />
+    </LinearLayout>
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabPlaylist"
         android:layout_width="wrap_content"

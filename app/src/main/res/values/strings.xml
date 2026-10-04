@@ -20,7 +20,8 @@
     <string name="status_idle">待输入网址</string>
     <string name="capability_ok">网页内核 %1$s · 选集与视频发现可用</string>
     <string name="capability_weak">网页内核 %1$s 过旧，无法识别选集与视频（需 WebView 88+）</string>
-    <string name="browse_need_url">先在上方输入一个网址</string>
+    <string name="browse_need_url">粘贴网址或搜索</string>
+    <string name="browse_hint_detail">页面会在受限环境中打开，并列出里面能找到的所有视频</string>
     <string name="fab_count">%1$d 个视频</string>
     <string name="fab_desc">打开选集</string>
     <string name="settings">设置</string>

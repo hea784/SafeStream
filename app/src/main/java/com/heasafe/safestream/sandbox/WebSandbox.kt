@@ -73,7 +73,8 @@ class WebSandbox(
 
     @SuppressLint("SetJavaScriptEnabled")
     val view: WebView = WebView(context).apply {
-        setBackgroundColor(android.graphics.Color.BLACK)
+        // 与 bg_root 一致：空状态插画按这个底色羽化融合，纯黑会出现可见的方形边界
+        setBackgroundColor(android.graphics.Color.parseColor("#0C0F14"))
         applyHardening(this)
         settings.loadsImagesAutomatically = true
         settings.loadWithOverviewMode = true

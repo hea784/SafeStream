@@ -100,10 +100,32 @@ class MainActivity : AppCompatActivity() {
         updateShieldUi()
         updatePlaylistUi()
         binding.statusLine.text = getString(R.string.status_idle)
+        reportWebViewCapability()
 
         player = androidx.media3.exoplayer.ExoPlayer.Builder(this).build().also {
             binding.playerView.player = it
             it.addListener(playerListener)
+        }
+    }
+
+    /**
+     * 启动即告知当前 WebView 是否满足选集/视频发现的要求。
+     *
+     * 为什么必须开机就报：部分国产 ROM 会冻结自带旧版 WebView，
+     * 而 addWebMessageListener 需要 WebView 88+。能力不足时视频发现会
+     * 静默失效 —— 等用户浏览完才发现"列表一直是空的"，那时已经晚了。
+     */
+    private fun reportWebViewCapability() {
+        val ok = androidx.webkit.WebViewFeature.isFeatureSupported(
+            androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER,
+        )
+        val version = runCatching {
+            androidx.webkit.WebViewCompat.getCurrentWebViewPackage(this)?.versionName
+        }.getOrNull().orEmpty()
+        binding.statusLine.text = if (ok) {
+            getString(R.string.capability_ok, version.ifBlank { "未知版本" })
+        } else {
+            getString(R.string.capability_weak, version.ifBlank { "未知版本" })
         }
     }
 

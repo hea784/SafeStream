@@ -18,6 +18,8 @@
     <string name="speed_label">倍速 %1$s</string>
     <string name="resume_toast">已从 %1$s 继续播放</string>
     <string name="status_idle">待输入网址</string>
+    <string name="capability_ok">网页内核 %1$s · 选集与视频发现可用</string>
+    <string name="capability_weak">网页内核 %1$s 过旧，无法识别选集与视频（需 WebView 88+）</string>
     <string name="browse_need_url">先在上方输入一个网址</string>
     <string name="render_gone">网页渲染进程异常，正在重建</string>
     <string name="no_playable_source">这个视频没有可用的播放地址（可能是 DRM 或 blob 流）</string>

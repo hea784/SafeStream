@@ -46,6 +46,23 @@ class WebSandbox(
 
     private var insecureAllowedHost: String? = null
 
+    /**
+     * WebView 的回调不一定在主线程。
+     *
+     * 真机（WebView 151）实测：`shouldInterceptRequest` 跑在 Chromium 的网络
+     * 子线程上，回调里直接改 TextView 会抛
+     * `ViewRootImpl$CalledFromWrongThreadException`。模拟器是 WebView 124，
+     * 同样代码不崩 —— 只在真机复现，根因就是跨线程碰 View。
+     *
+     * 因此统一把回调切回主线程，调用方可以假定自己在主线程。
+     */
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun onMain(block: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) block()
+        else main.post(block)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     val view: WebView = WebView(context).apply {
         setBackgroundColor(android.graphics.Color.BLACK)
@@ -60,13 +77,15 @@ class WebSandbox(
         ).also { c ->
             c.filterEnabled = filterEnabled
             c.insecureHostConfirmed = insecureAllowedHost
-            c.onLoadError = { detail -> report("加载失败：$detail") }
-            c.onPageStart = { injectScanner() }
-            c.onPageDone = { injectScanner() }
-            c.onRenderGone = {
+        c.onLoadError = { detail -> report("加载失败：$detail") }
+        c.onPageStart = { onMain { injectScanner() } }
+        c.onPageDone = { onMain { injectScanner() } }
+        c.onRenderGone = {
+            onMain {
                 report("页面渲染进程已崩溃，正在重建网页")
                 onFatal?.invoke("渲染进程崩溃")
             }
+        }
         }
         webChromeClient = SafeWebChromeClient(onSecurityEvent = ::report)
         setDownloadListener(SafeDownloadListener(onSecurityEvent = ::report))
@@ -111,7 +130,7 @@ class WebSandbox(
 
     private fun report(message: String) {
         Log.i(TAG, message)
-        onSecurityEvent(message)
+        onMain { onSecurityEvent(message) }
     }
 
     private fun injectScanner() {
@@ -182,7 +201,7 @@ class WebSandbox(
                 },
             )
         }
-        if (out.length() > 0) onVideosFound(out.toString())
+        if (out.length() > 0) onMain { onVideosFound(out.toString()) }
     }
 
     private fun onEpisodes(items: JSONArray?) {
@@ -204,7 +223,7 @@ class WebSandbox(
                 },
             )
         }
-        if (out.length() > 0) onEpisodesFound(out.toString())
+        if (out.length() > 0) onMain { onEpisodesFound(out.toString()) }
     }
 
     private fun onNetworkHit(o: JSONObject) {
@@ -215,7 +234,7 @@ class WebSandbox(
         // 用户点了 blob 流：播本页已发现的媒体。地址本身在页面外没有意义，
         // 但点击已经表达了播放意图。
         if (kind == "play-found") {
-            onVideosFound(PLAY_FOUND_MARKER)
+            onMain { onVideosFound(PLAY_FOUND_MARKER) }
             return
         }
         if (!UrlGuard.allowNavigation(url)) return

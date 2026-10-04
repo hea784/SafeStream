@@ -12,11 +12,12 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.heasafe.safestream.R
-import com.heasafe.safestream.core.UrlGuard
 import com.heasafe.safestream.data.HistoryStore
 import com.heasafe.safestream.databinding.ActivityMainBinding
 import com.heasafe.safestream.model.VideoItem
 import com.heasafe.safestream.sandbox.WebSandbox
+import com.heasafe.safestream.store.PlaylistStore
+import com.heasafe.safestream.submit.UrlSubmission
 import org.json.JSONArray
 
 // 唯一界面：顶部搜索栏 + 播放页/浏览页 + 底部导航。
@@ -31,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sandbox: WebSandbox
     private lateinit var player: androidx.media3.exoplayer.ExoPlayer
 
+    private val submission = UrlSubmission()
+    private val playlist = PlaylistStore()
+
     private var videos: List<VideoItem> = emptyList()
     private var currentIndex = RecyclerView.NO_POSITION
 
@@ -43,10 +47,6 @@ class MainActivity : AppCompatActivity() {
     private var sandboxRunning = false
     private var filterEnabled = true
     private var blockedCount = 0
-
-    // 同一地址的重复提交会清空播放列表，这里做防抖
-    private var submittingUrl: String? = null
-    private var lastSubmitAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -125,35 +125,25 @@ class MainActivity : AppCompatActivity() {
     private fun submitUrl() {
         val raw = binding.urlInput.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
+        if (!submission.tryAcquire(raw, SystemClock.elapsedRealtime())) return
 
-        val now = SystemClock.elapsedRealtime()
-        if (submittingUrl == raw && now - lastSubmitAt < SUBMIT_DEBOUNCE_MS) return
-        submittingUrl = raw
-        lastSubmitAt = now
-
-        if (looksLikeKeyword(raw)) {
-            loadUrl(SEARCH_PREFIX + java.net.URLEncoder.encode(raw, "UTF-8"), null)
-            return
-        }
-        when (val verdict = UrlGuard.inspect(raw)) {
-            is UrlGuard.Result.Rejected -> toast(verdict.reason)
-            is UrlGuard.Result.Secure -> loadUrl(verdict.normalized, null)
-            is UrlGuard.Result.Insecure -> MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.warn_insecure_title)
-                .setMessage(getString(R.string.warn_insecure_body, verdict.normalized))
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.warn_insecure_ok) { _, _ ->
-                    loadUrl(verdict.normalized, java.net.URI(verdict.normalized).host)
+        when (val outcome = UrlSubmission.resolve(raw)) {
+            is UrlSubmission.Outcome.Reject -> toast(outcome.reason)
+            is UrlSubmission.Outcome.SearchUrl -> loadUrl(outcome.url, null)
+            is UrlSubmission.Outcome.LoadUrl ->
+                if (outcome.needsInsecureConfirm) {
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.warn_insecure_title)
+                        .setMessage(getString(R.string.warn_insecure_body, outcome.url))
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.warn_insecure_ok) { _, _ ->
+                            loadUrl(outcome.url, outcome.insecureHost)
+                        }
+                        .show()
+                } else {
+                    loadUrl(outcome.url, null)
                 }
-                .show()
         }
-    }
-
-    /** 没有 scheme 也没有点号的按搜索词处理。 */
-    private fun looksLikeKeyword(input: String): Boolean {
-        if (input.contains("://")) return false
-        if (input.contains(' ')) return true
-        return !input.substringBefore('/').contains('.')
     }
 
     private fun loadUrl(url: String, insecureHost: String?) {
@@ -223,12 +213,7 @@ class MainActivity : AppCompatActivity() {
             VideoItem.fromJson(arr.optString(i))?.let(parsed::add)
         }
         if (parsed.isEmpty()) return
-
-        // 按 URL 合并：扫描会反复上报同一批，整体替换会让列表不停闪
-        val merged = LinkedHashMap<String, VideoItem>()
-        videos.forEach { merged[it.url] = it }
-        parsed.forEach { merged.putIfAbsent(it.url, it) }
-        val next = merged.values.toList()
+        val next = playlist.mergeVideos(videos, parsed)
         if (next == videos) return
         videos = next
         adapter.submitList(next)
@@ -252,10 +237,7 @@ class MainActivity : AppCompatActivity() {
             VideoItem.fromJson(arr.optString(i))?.let(parsed::add)
         }
         if (parsed.isEmpty()) return
-        val merged = LinkedHashMap<String, VideoItem>()
-        parsed.forEach { merged[it.url] = it }
-        videos.filterNot { it.isEpisode }.forEach { merged[it.url] = it }
-        val next = merged.values.toList()
+        val next = playlist.mergeEpisodes(videos, parsed)
         if (next == videos) return
         videos = next
         adapter.submitList(next)
@@ -263,7 +245,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun playFirstDiscovered() {
-        val target = videos.firstOrNull { !it.isEpisode && it.isPlayable }
+        val target = playlist.firstPlayable(videos)
         if (target == null) {
             toast(getString(R.string.no_playable_source))
             return
@@ -370,7 +352,7 @@ class MainActivity : AppCompatActivity() {
         binding.listHeader.text = if (videos.isEmpty()) {
             getString(R.string.playlist_section)
         } else {
-            getString(R.string.playlist_title, videos.count { it.isPlayable })
+            getString(R.string.playlist_title, PlaylistStore.playableCount(videos))
         }
         binding.emptyState.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
     }
@@ -395,8 +377,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        const val SUBMIT_DEBOUNCE_MS = 2000L
-        const val SEARCH_PREFIX = "https://www.bing.com/search?q="
         val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }

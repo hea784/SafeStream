@@ -17,6 +17,7 @@
     <string name="sandbox_cleaned">沙箱数据已清理</string>
     <string name="speed_label">倍速 %1$s</string>
     <string name="resume_toast">已从 %1$s 继续播放</string>
+    <string name="autoplay_next">自动连播 · 第 %1$d 集</string>
     <string name="status_idle">待输入网址</string>
     <string name="capability_ok">网页内核 %1$s · 选集与视频发现可用</string>
     <string name="capability_weak">网页内核 %1$s 过旧，无法识别选集与视频（需 WebView 88+）</string>

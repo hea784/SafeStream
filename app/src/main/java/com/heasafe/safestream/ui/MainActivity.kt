@@ -43,7 +43,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sheetAdapter: PlaylistAdapter
 
     private var videos: List<VideoItem> = emptyList()
-    private var currentIndex = RecyclerView.NO_POSITION
 
     // 当前已交给播放器的地址，用于避免重复重建 MediaItem（会造成画面闪烁）
     private var playingUrl: String? = null
@@ -51,6 +50,10 @@ class MainActivity : AppCompatActivity() {
     private var lastSandboxUrl: String? = null
     private var insecureHostAllowed: String? = null
     private var pendingEpisode: VideoItem? = null
+
+    // 正在播的那一集（选集页地址）。连播用它找下一集；媒体地址不是集，
+    // 不能当连播的锚点。
+    private var playingEpisode: VideoItem? = null
     private var sandboxRunning = false
     private var filterEnabled = true
     private var blockedCount = 0
@@ -186,6 +189,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadUrl(url: String, insecureHost: String?) {
         pendingEpisode = null
+        playingEpisode = null
         playingUrl = null
         blockedCount = 0
         videos = emptyList()
@@ -279,6 +283,7 @@ class MainActivity : AppCompatActivity() {
         adapter.submitList(emptyList())
         history.clearAll()
         playingUrl = null
+        playingEpisode = null
         binding.statusLine.text = getString(R.string.sandbox_cleaned)
         updatePlaylistUi()
         toast(getString(R.string.sandbox_cleaned))
@@ -340,14 +345,16 @@ class MainActivity : AppCompatActivity() {
         if (item.url == lastSandboxUrl) {
             val found = videos.firstOrNull { !it.isEpisode && it.isPlayable }
             if (found != null) {
+                playingEpisode = item
                 playAt(videos.indexOf(found), found)
                 return
             }
         }
         loadUrl(item.url, insecureHostAllowed)
-        // 必须在 loadUrl 之后设置：loadUrl 开头会把 pendingEpisode 清空，
-        // 之前放在前面导致自动播放在任何情况下都不会触发。
+        // 必须在 loadUrl 之后设置：loadUrl 开头会清掉播放会话状态，
+        // 之前放在前面导致自动播放在任何情况下都不会触发（pendingEpisode 同坑）。
         pendingEpisode = item
+        playingEpisode = item
         toast("正在加载第 ${item.episodeNo} 集")
     }
 
@@ -363,7 +370,6 @@ class MainActivity : AppCompatActivity() {
         // 同地址已在播放/加载中就不重建 MediaItem，否则画面反复重置闪烁
         if (item.url == playingUrl) return
         playingUrl = item.url
-        currentIndex = index
         adapter.playingIndex = index
 
         val mediaItem = androidx.media3.common.MediaItem.Builder()
@@ -407,8 +413,19 @@ class MainActivity : AppCompatActivity() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!isPlaying) return
-            val item = videos.getOrNull(currentIndex) ?: return
-            history.saveProgress(item.url, player.currentPosition, player.duration)
+            // 进度归属用地址不用索引：列表会因选集合并而重排，
+            // 索引在重排后指向别的条目（实测进度被记到选集页地址上）
+            val url = playingUrl ?: return
+            history.saveProgress(url, player.currentPosition, player.duration)
+        }
+
+        override fun onPlaybackStateChanged(state: Int) {
+            if (state != androidx.media3.common.Player.STATE_ENDED) return
+            val current = playingEpisode ?: return
+            val next = PlaylistStore.nextEpisode(videos, current.url) ?: return
+            binding.statusLine.text = getString(R.string.autoplay_next, next.episodeNo)
+            showStatusBriefly()
+            playEpisode(next)
         }
     }
 
@@ -450,7 +467,7 @@ class MainActivity : AppCompatActivity() {
             getString(R.string.fab_count, n) + "，" + getString(R.string.fab_desc)
         binding.fabPlaylist.visibility = if (videos.isEmpty()) View.INVISIBLE else View.VISIBLE
         sheetAdapter.submitList(visible)
-        sheetAdapter.playingIndex = visible.indexOfFirst { it.url == videos.getOrNull(currentIndex)?.url }
+        sheetAdapter.playingIndex = visible.indexOfFirst { it.url == playingUrl }
         sheet.findViewById<android.widget.TextView>(R.id.sheetTitle)!!.text =
             getString(R.string.playlist_title, n)
         sheet.findViewById<android.widget.TextView>(R.id.sheetEmpty)!!.visibility =
@@ -459,14 +476,17 @@ class MainActivity : AppCompatActivity() {
 
     /** 有东西在播时才出现迷你播放器，点它进全屏。 */
     private fun updateMiniPlayer() {
-        val has = videos.getOrNull(currentIndex) != null
-        binding.miniPlayer.visibility = if (has) View.VISIBLE else View.GONE
-        binding.miniTitle.text = videos.getOrNull(currentIndex)?.title.orEmpty()
+        val item = playingItem()
+        binding.miniPlayer.visibility = if (item != null) View.VISIBLE else View.GONE
+        binding.miniTitle.text = item?.title.orEmpty()
         if (!fullscreen.isFullscreen) {
-            binding.miniSpeed.visibility = if (has) View.VISIBLE else View.GONE
+            binding.miniSpeed.visibility = if (item != null) View.VISIBLE else View.GONE
             binding.miniSpeed.text = formatSpeed(player.playbackParameters.speed)
         }
     }
+
+    /** 正在播的条目，按地址找而不是按位置找（列表会重排）。 */
+    private fun playingItem(): VideoItem? = videos.firstOrNull { it.url == playingUrl }
 
     private fun formatMs(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
 
@@ -474,9 +494,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        val item = videos.getOrNull(currentIndex) ?: return
+        val url = playingUrl ?: return
         if (player.isPlaying) {
-            history.saveProgress(item.url, player.currentPosition, player.duration)
+            history.saveProgress(url, player.currentPosition, player.duration)
         }
     }
 

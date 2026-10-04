@@ -64,5 +64,19 @@ class PlaylistStore {
 
         /** 角标上显示的数字，与用户实际看到的条目一致。 */
         fun visibleCount(list: List<VideoItem>): Int = visibleItems(list).size
+
+        /**
+         * 连播：当前集播完后要加载的下一集。
+         *
+         * 只在选集序列里找 afterUrl 的下一项——媒体地址（m3u8）不是集，
+         * 不参与连播顺序。找不到（当前不是集 / 已是最后一集）返回 null，
+         * 调用方据此停止连播。
+         */
+        fun nextEpisode(list: List<VideoItem>, afterUrl: String): VideoItem? {
+            val episodes = list.filter { it.isEpisode }
+            val idx = episodes.indexOfFirst { it.url == afterUrl }
+            if (idx < 0 || idx + 1 >= episodes.size) return null
+            return episodes[idx + 1]
+        }
     }
 }

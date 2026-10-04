@@ -128,11 +128,18 @@ def main():
         return 0
 
     print("[3/4] 提交并打标签 ...")
-    run(["git", "add", "-A"])
-    run(["git", "commit", "-m", "release: v" + version])
-    run(["git", "tag", "-f", "v" + version])
-    run(["git", "push", "origin", "main"])
-    run(["git", "push", "--force", "origin", "v" + version])
+    # 每一步都查返回码：这里曾因 push 静默失败，远端落后了 5 个版本没人发现
+    def must(args, what):
+        rc, out, err = run(args)
+        if rc != 0:
+            print(out[-1500:], err[-1500:])
+            fail(what + " 失败（版本号已改、APK 已构建，但未同步到远端）")
+
+    must(["git", "add", "-A"], "git add")
+    must(["git", "commit", "-m", "release: v" + version], "git commit")
+    must(["git", "tag", "-f", "v" + version], "git tag")
+    must(["git", "push", "origin", "main"], "git push main")
+    must(["git", "push", "--force", "origin", "v" + version], "git push tag")
 
     print("[4/4] 发布 GitHub Release ...")
     notes = os.path.join(os.environ.get("TEMP", "."), "safestream-notes.md")

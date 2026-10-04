@@ -147,7 +147,7 @@ class WebSandbox(
             report("当前 WebView 不支持安全消息通道，选集与网络发现不可用")
             return
         }
-        view.evaluateJavascript(VideoScannerScript.SOURCE, null)
+        view.evaluateJavascript(VideoScannerScript.source(view.context), null)
     }
 
     /**

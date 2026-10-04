@@ -130,4 +130,30 @@ class PlaylistStoreTest {
         )
         assertEquals("用户看到 2 集而不是 3 条", 2, PlaylistStore.visibleCount(merged))
     }
+
+    @Test
+    fun `连播 - 返回当前集的下一集`() {
+        val eps = listOf(
+            episode("p/1", 1),
+            episode("p/2", 2),
+            episode("p/3", 3),
+            media("m3u8://ep2"), // 混在列表里的媒体地址不参与连播序列
+        )
+        val next = PlaylistStore.nextEpisode(eps, "p/2")
+        assertEquals("p/3", next?.url)
+        assertEquals(3, next?.episodeNo)
+    }
+
+    @Test
+    fun `连播 - 已是最后一集时返回 null`() {
+        val eps = listOf(episode("p/1", 1), episode("p/2", 2))
+        assertNull(PlaylistStore.nextEpisode(eps, "p/2"))
+    }
+
+    @Test
+    fun `连播 - 当前不在选集序列里时返回 null`() {
+        val eps = listOf(episode("p/1", 1), episode("p/2", 2))
+        assertNull("媒体地址不该匹配到任何一集", PlaylistStore.nextEpisode(eps, "m3u8://x"))
+        assertNull(PlaylistStore.nextEpisode(eps, ""))
+    }
 }

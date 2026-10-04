@@ -18,6 +18,13 @@
     <string name="speed_label">倍速 %1$s</string>
     <string name="resume_toast">已从 %1$s 继续播放</string>
     <string name="autoplay_next">自动连播 · 第 %1$d 集</string>
+    <string name="shield_count">防护 · 本次已处理 %1$d 项</string>
+    <string name="shield_switch">防护拦截（广告与跟踪）</string>
+    <string name="shield_events_empty">本次会话还没有安全事件</string>
+    <string name="mini_play">播放</string>
+    <string name="mini_pause">暂停</string>
+    <string name="meta_playing">播放中</string>
+    <string name="meta_watched">看过</string>
     <string name="status_idle">待输入网址</string>
     <string name="capability_ok">网页内核 %1$s · 选集与视频发现可用</string>
     <string name="capability_weak">网页内核 %1$s 过旧，无法识别选集与视频（需 WebView 88+）</string>

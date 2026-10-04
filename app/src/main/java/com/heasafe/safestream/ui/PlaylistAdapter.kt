@@ -16,6 +16,8 @@ import java.util.concurrent.TimeUnit
 
 class PlaylistAdapter(
     private val onClick: (Int, VideoItem) -> Unit,
+    /** 条目备注覆盖（播放中 / 看过），返回 null 走默认文案。 */
+    private val metaOverride: ((VideoItem) -> String?)? = null,
 ) : ListAdapter<VideoItem, PlaylistAdapter.VH>(DIFF) {
 
     var playingIndex: Int = RecyclerView.NO_POSITION
@@ -63,6 +65,7 @@ class PlaylistAdapter(
         }
 
         private fun metaLine(item: VideoItem): String {
+            metaOverride?.invoke(item)?.let { return it }
             if (item.isEpisode) return "整集"
             val kind = when {
                 !item.isPlayable -> item.contextLabel()

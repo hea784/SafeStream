@@ -5,9 +5,14 @@
 视频用 MSE blob 流，模拟点它时 currentSrc 必然是 blob: 的情形
 ——这正是线上"浏览与播放器连不上"那个 bug 的触发条件。
 
-用法：python tools/make_episode_fixture.py
+用法：python tools/make_episode_fixture.py [--seconds 6] [--out testfixture_ep]
+
+--seconds 6   从 testfixture/clip1.mp4 复制 6 秒短片（默认，供连播测试）
+--seconds 60  用 ffmpeg 生成 60 秒长片（供暂停等需要稳定播放窗口的测试）
 """
 import os
+import subprocess
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "testfixture")
@@ -56,25 +61,38 @@ SCRIPT = """
   </script>
 """
 def main():
-    os.makedirs(OUT, exist_ok=True)
+    args = sys.argv[1:]
+    seconds = int(args[args.index("--seconds") + 1]) if "--seconds" in args else 6
+    out = os.path.join(HERE, args[args.index("--out") + 1]) if "--out" in args else OUT
+    os.makedirs(out, exist_ok=True)
     with open(os.path.join(SRC, "clip1.mp4"), "rb") as f:
         data = f.read()
-    with open(os.path.join(OUT, "clip1.mp4"), "wb") as f:
-        f.write(data)
+    clip_path = os.path.join(out, "clip1.mp4")
+    if seconds == 6:
+        with open(clip_path, "wb") as f:
+            f.write(data)
+    else:
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=%d:size=640x360:rate=24" % seconds,
+             "-f", "lavfi", "-i", "sine=frequency=440:duration=%d" % seconds,
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", clip_path],
+            check=True, capture_output=True,
+        )
+        print("已生成 %d 秒长片: %s" % (seconds, clip_path))
+    with open(clip_path, "rb") as f:
+        data = f.read()  # 各集页面统一用选定的片段，时长一致才有可预期的测试窗口
     page = HTML_HEAD + SCRIPT + HTML_TAIL
-    with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as f:
+    with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
     # 每一集都给一份可播媒体，便于验证"选中某集 -> 加载该页 -> 发现媒体 -> 播放"
     for i in range(1, 5):
-        sub = os.path.join(OUT, "ep-%d" % i)
+        sub = os.path.join(out, "ep-%d" % i)
         os.makedirs(sub, exist_ok=True)
         with open(os.path.join(sub, "clip1.mp4"), "wb") as f:
             f.write(data)
         with open(os.path.join(sub, "index.html"), "w", encoding="utf-8") as f:
             f.write(page)
-    print("已生成:", OUT)
-    print("起服务: cd", OUT, "&& python -m http.server 8096 --bind 127.0.0.1")
-    print("再执行: adb -s emulator-5554 reverse tcp:8096 tcp:8096")
+    print("已生成:", out)
     return 0
 
 

@@ -14,7 +14,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 // 表现为一瞬间黑屏，可接受；用两个 PlayerView 则要管理两份 player 实例，更糟。
 class FullscreenController(
     private val activity: Activity,
-    private val playerView: View,
+    private val playerView: androidx.media3.ui.PlayerView,
     private val miniSlot: FrameLayout,
     private val fullscreenContainer: FrameLayout,
 ) {
@@ -40,6 +40,9 @@ class FullscreenController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        // 控制器只在全屏开：迷你槽里它以约 1 秒一次的频率刷时间条，
+        // 暂停了也在渲染，界面永远不 idle
+        playerView.useController = true
         fullscreenContainer.visibility = View.VISIBLE
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setSystemBarsHidden(true)
@@ -57,6 +60,7 @@ class FullscreenController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        playerView.useController = false
         fullscreenContainer.visibility = View.GONE
         activity.requestedOrientation = restoreOrientation
     }

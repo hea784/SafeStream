@@ -2,10 +2,14 @@ package com.heasafe.safestream.ui
 
 import android.os.Bundle
 import android.os.SystemClock
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -31,6 +35,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var history: HistoryStore
+    private lateinit var securityLog: com.heasafe.safestream.core.SecurityLog
     private lateinit var adapter: PlaylistAdapter
     private lateinit var sandbox: WebSandbox
     private lateinit var player: androidx.media3.exoplayer.ExoPlayer
@@ -66,11 +71,22 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, backHandler)
 
         history = HistoryStore(this)
-        adapter = PlaylistAdapter { index, item -> playAt(index, item) }
-        sheetAdapter = PlaylistAdapter { index, item ->
-            sheet.dismiss()
-            playAt(videos.indexOf(item), item)
-        }
+        securityLog = com.heasafe.safestream.core.SecurityLog()
+        adapter = PlaylistAdapter(onClick = { index, item -> playAt(index, item) })
+        sheetAdapter = PlaylistAdapter(
+            onClick = { index, item ->
+                sheet.dismiss()
+                playAt(videos.indexOf(item), item)
+            },
+            metaOverride = { item ->
+                when {
+                    // 浮层行是剧集页地址：播放中对照 playingEpisode 而不是媒体地址
+                    item.url == playingEpisode?.url -> getString(R.string.meta_playing)
+                    history.hasOpened(item.url) -> getString(R.string.meta_watched)
+                    else -> null
+                }
+            },
+        )
         sheet = BottomSheetDialog(this)
         sheet.setContentView(R.layout.view_playlist_sheet)
         sheet.findViewById<RecyclerView>(R.id.sheetList)!!.adapter = sheetAdapter
@@ -101,15 +117,20 @@ class MainActivity : AppCompatActivity() {
                 actionId == EditorInfo.IME_ACTION_GO
             ) { submitUrl(); true } else false
         }
-        binding.shieldButton.setOnClickListener { toggleFilter() }
+        binding.shieldButton.setOnClickListener { showShieldPanel() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
         binding.miniSpeed.setOnClickListener { cycleSpeed() }
+        binding.miniToggle.setOnClickListener {
+            if (player.isPlaying) player.pause() else player.play()
+        }
+        progressHandler.post(progressTick)
         // 点状态行可重新展开，否则提示淡出后就看不到了
         binding.statusLine.setOnClickListener { showStatusBriefly() }
         binding.settingsButton.setOnClickListener { showSettings() }
         // 播放器由代码创建，才能在迷你条与全屏容器之间搬运
         playerView = androidx.media3.ui.PlayerView(this).apply {
-            useController = true
+            // 控制器只在全屏开（FullscreenController 切换）；迷你槽有自己的迷你栏
+            useController = false
             setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
         }
         binding.miniVideoSlot.addView(
@@ -214,6 +235,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onSecurityEvent(message: String) {
         if (message.startsWith("已拦截")) blockedCount++
+        securityLog.record(message)
         binding.statusLine.text = buildString {
             append(if (sandboxRunning) "沙箱运行中" else "沙箱已停止")
             if (blockedCount > 0) append(" · 已拦截 $blockedCount 个跟踪请求")
@@ -241,6 +263,43 @@ class MainActivity : AppCompatActivity() {
         binding.statusLine.animate().alpha(0f).setDuration(300).withEndAction {
             binding.statusLine.visibility = View.GONE
         }.start()
+    }
+
+    /** 防护面板（借鉴 Brave Shields）：本次会话的安全事件明细 + 开关 + 一键清理。 */
+    private fun showShieldPanel() {
+        val panel = BottomSheetDialog(this)
+        panel.setContentView(R.layout.view_shield_sheet)
+        panel.findViewById<TextView>(R.id.shieldCount)!!.text =
+            getString(R.string.shield_count, securityLog.count())
+        val events = panel.findViewById<RecyclerView>(R.id.shieldList)!!
+        events.adapter = ShieldEventsAdapter(securityLog.all())
+        panel.findViewById<TextView>(R.id.shieldEmpty)!!.visibility =
+            if (securityLog.count() == 0) View.VISIBLE else View.GONE
+        val sw = panel.findViewById<Switch>(R.id.shieldSwitch)!!
+        sw.isChecked = filterEnabled
+        sw.setOnCheckedChangeListener { _, checked ->
+            if (checked != filterEnabled) toggleFilter()
+        }
+        panel.findViewById<Button>(R.id.shieldClear)!!.setOnClickListener {
+            panel.dismiss()
+            purgeEverything()
+        }
+        panel.show()
+    }
+
+    private inner class ShieldEventsAdapter(private var items: List<String>) :
+        RecyclerView.Adapter<ShieldEventsAdapter.VH>() {
+
+        inner class VH(val text: TextView) : RecyclerView.ViewHolder(text)
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+            VH(LayoutInflater.from(parent.context).inflate(R.layout.item_security, parent, false) as TextView)
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            holder.text.text = items[position]
+        }
     }
 
     private fun toggleFilter() {
@@ -282,6 +341,7 @@ class MainActivity : AppCompatActivity() {
         videos = emptyList()
         adapter.submitList(emptyList())
         history.clearAll()
+        securityLog.clear()
         playingUrl = null
         playingEpisode = null
         binding.statusLine.text = getString(R.string.sandbox_cleaned)
@@ -313,6 +373,8 @@ class MainActivity : AppCompatActivity() {
             val media = next.firstOrNull { !it.isEpisode && it.isPlayable }
             if (media != null) {
                 pendingEpisode = null
+                // 「看过」按剧集页地址记账（浮层行就是页地址）
+                history.markOpened(waiting.url)
                 playAt(next.indexOf(media), media)
             }
         }
@@ -412,6 +474,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            updateMiniToggle()
             if (!isPlaying) return
             // 进度归属用地址不用索引：列表会因选集合并而重排，
             // 索引在重排后指向别的条目（实测进度被记到选集页地址上）
@@ -420,6 +483,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPlaybackStateChanged(state: Int) {
+            updateMiniToggle()
             if (state != androidx.media3.common.Player.STATE_ENDED) return
             val current = playingEpisode ?: return
             val next = PlaylistStore.nextEpisode(videos, current.url) ?: return
@@ -466,7 +530,11 @@ class MainActivity : AppCompatActivity() {
         binding.fabPlaylist.contentDescription =
             getString(R.string.fab_count, n) + "，" + getString(R.string.fab_desc)
         binding.fabPlaylist.visibility = if (videos.isEmpty()) View.INVISIBLE else View.VISIBLE
-        sheetAdapter.submitList(visible)
+        sheetAdapter.submitList(visible) {
+            // 条目没变但备注会变（播放中/看过），DiffUtil 比不出 ViewItem 之外的状态，
+            // 小列表直接全量重绑，保证标记即时刷新
+            sheetAdapter.notifyDataSetChanged()
+        }
         sheetAdapter.playingIndex = visible.indexOfFirst { it.url == playingUrl }
         sheet.findViewById<android.widget.TextView>(R.id.sheetTitle)!!.text =
             getString(R.string.playlist_title, n)
@@ -479,9 +547,37 @@ class MainActivity : AppCompatActivity() {
         val item = playingItem()
         binding.miniPlayer.visibility = if (item != null) View.VISIBLE else View.GONE
         binding.miniTitle.text = item?.title.orEmpty()
+        updateMiniToggle()
         if (!fullscreen.isFullscreen) {
             binding.miniSpeed.visibility = if (item != null) View.VISIBLE else View.GONE
             binding.miniSpeed.text = formatSpeed(player.playbackParameters.speed)
+        }
+    }
+
+    /** 迷你条上的播放/暂停按钮与系统状态保持一致。 */
+    private fun updateMiniToggle() {
+        val playing = player.isPlaying
+        binding.miniToggle.setImageResource(
+            if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+        )
+        binding.miniToggle.contentDescription =
+            getString(if (playing) R.string.mini_pause else R.string.mini_play)
+    }
+
+    /** 迷你条底部进度条：半秒一跳；暂停时不刷新——进度本来就停着，
+     * 而持续 invalidate 会让界面永远不 idle（无障碍与 uiautomator 全被拖死）。 */
+    private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val progressTick = object : Runnable {
+        override fun run() {
+            if (binding.miniPlayer.visibility == View.VISIBLE &&
+                player.isPlaying &&
+                player.duration > 0
+            ) {
+                binding.miniProgress.max = player.duration.toInt().coerceAtLeast(1)
+                binding.miniProgress.progress =
+                    player.currentPosition.toInt().coerceIn(0, binding.miniProgress.max)
+            }
+            progressHandler.postDelayed(this, 500)
         }
     }
 
@@ -513,8 +609,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        progressHandler.removeCallbacksAndMessages(null)
         playerView.player = null
         player.release()
+        // 恢复安全契约第 14 条「退出即清」：架构合并时被静默丢掉过。
+        // 必须在 destroy() 之前——之后 WebView 已销毁，purge 里的清缓存会炸。
+        sandbox.purge()
         sandbox.destroy()
         super.onDestroy()
     }

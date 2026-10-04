@@ -88,6 +88,14 @@ class SafeWebViewClient(
             onSecurityEvent("已阻止跳转：" + target.substringBefore("://"))
             return true
         }
+        // 页面内跳转剥掉跟踪参数：剥完重写一次加载，再进来时已无参数可剥，
+        // 自然落回 false，不会循环
+        val cleaned = com.heasafe.safestream.core.UrlCleaner.stripTrackingParams(target)
+        if (cleaned != null) {
+            onSecurityEvent("已剥离跟踪参数后加载")
+            view?.loadUrl(cleaned)
+            return true
+        }
         return false
     }
 

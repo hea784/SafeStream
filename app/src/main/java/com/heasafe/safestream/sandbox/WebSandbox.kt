@@ -114,7 +114,14 @@ class WebSandbox(
             report("已阻止跳转：" + url.substringBefore("://"))
             return
         }
-        view.loadUrl(url)
+        // 分享链接常带 utm_* 归因参数，进沙箱前剥掉（仅页面地址，媒体不动）
+        val cleaned = com.heasafe.safestream.core.UrlCleaner.stripTrackingParams(url)
+        if (cleaned != null) report("已剥离跟踪参数")
+        view.loadUrl(cleaned ?: url)
+        // App 自己驱动的换页（提交网址、切集）不算"历史"：清掉 WebView 回退栈，
+        // 否则按返回键会被 WebView 吞掉、回不到上一集也退不出应用。
+        // 用户在网页里点击产生的导航记录保留，行为与浏览器一致。
+        runCatching { view.clearHistory() }
     }
 
     /** 停止加载并擦除站点数据。 */

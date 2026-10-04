@@ -53,8 +53,19 @@
     `onGeolocationPermissionsShowPrompt`）必须挂在 **`WebChromeClient`** 上。
     它们在 `WebViewClient` 上不存在，重写了不会有任何效果 —— 这是本项目实测踩过的坑。
 14. 沙箱退出 / 页面关闭时：`CookieManager.removeAllCookies`、`WebStorage.deleteAllData`、`clearCache(true)`、`clearHistory()`、`clearFormData()`。
+    退出即清这条在架构合并（双 Activity 合为单 Activity）时曾被静默丢掉，
+    现由 `onDestroy` 恢复；且 App 自己驱动的换页要清 WebView 回退栈，
+    否则返回键被 WebView 历史吞掉、用户退不出应用（也就不会触发清理）。
 15. Release 包 `android:allowBackup="false"`、`android:usesCleartextTraffic="false"`、无 `android:debuggable`。
 16. URL 输入做长度与字符校验，拒绝 `javascript:` 等注入型 scheme。
+17. 页面导航剥离跟踪参数（`utm_*`、`fbclid`、`gclid`、`msclkid`、`igshid`、
+    `spm_id_from` 等，Firefox ETP / Brave / iOS LTP 同一思路）。
+    只剥精确白名单 + `utm_` 前缀：**绝不模糊匹配**，签名清单地址的
+    `auth_key`/`token`/`sign` 一旦误剥，视频直接播不出来。
+    仅作用于主框架导航，媒体请求不受影响。
+18. 防护可观测：本次会话的安全事件流水进 `SecurityLog`（封顶 300 条），
+    点盾牌弹出面板展示明细、站点内开关与一键清理 —— 只有计数没有明细的
+    防护既无法自证工作，也无法发现误伤。
 
 > 诚实边界：上述措施降低风险，但无法承诺"零风险"。Android WebView 与系统浏览器共用同一内核，任何声称绝对隔离网页恶意内容的实现都是不可信的。App 的立场是"最小权限 + 可观测 + 一键退出"。
 

@@ -132,17 +132,16 @@
         app:layout_constraintBottom_toTopOf="@id/miniPlayer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/statusLine" />
-    <!-- 迷你播放器：播放时出现，点它进全屏 -->
-    <LinearLayout
+    <!-- 迷你播放器：播放时出现，点它进全屏；借鉴主流迷你条，
+         不进全屏也能暂停，底部细进度条实时反映播放位置 -->
+    <FrameLayout
         android:id="@+id/miniPlayer"
         android:layout_width="0dp"
-        android:layout_height="56dp"
+        android:layout_height="60dp"
         android:layout_marginStart="12dp"
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="10dp"
         android:background="@drawable/bg_sheet"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
         android:visibility="gone"
@@ -150,30 +149,56 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         tools:visibility="visible">
-        <FrameLayout
-            android:id="@+id/miniVideoSlot"
-            android:layout_width="72dp"
-            android:layout_height="40dp" />
-        <TextView
-            android:id="@+id/miniTitle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <FrameLayout
+                android:id="@+id/miniVideoSlot"
+                android:layout_width="72dp"
+                android:layout_height="40dp" />
+            <TextView
+                android:id="@+id/miniTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="@style/TextAppearance.SafeStream.Title"
+                tools:text="第 3 集" />
+            <ImageButton
+                android:id="@+id/miniToggle"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/mini_play"
+                android:src="@drawable/ic_play"
+                app:tint="@color/text_primary" />
+            <TextView
+                android:id="@+id/miniSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:padding="8dp"
+                android:text="1.0x"
+                android:textColor="@color/brand"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <ProgressBar
+            android:id="@+id/miniProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="bottom"
             android:layout_marginStart="12dp"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textAppearance="@style/TextAppearance.SafeStream.Title"
-            tools:text="第 3 集" />
-        <TextView
-            android:id="@+id/miniSpeed"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:padding="8dp"
-            android:text="1.0x"
-            android:textColor="@color/brand"
-            android:visibility="gone" />
-    </LinearLayout>
+            android:layout_marginEnd="12dp"
+            android:progressBackgroundTint="@color/divider"
+            android:progressTint="@color/brand" />
+    </FrameLayout>
     <!-- 全屏容器：进入全屏时把播放器搬进来，退出再搬回 miniVideoSlot -->
     <FrameLayout
         android:id="@+id/fullscreenContainer"

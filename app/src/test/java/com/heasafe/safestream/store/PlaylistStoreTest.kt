@@ -3,6 +3,7 @@ package com.heasafe.safestream.store
 import com.heasafe.safestream.model.VideoItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -94,5 +95,39 @@ class PlaylistStoreTest {
         // 选集条目是可播的（一集就是一条视频），blob 流不是。
         // 一部 5 集的剧，标题就该显示"发现 5 个视频"。
         assertEquals("选集与媒体都算，blob 不算", 2, PlaylistStore.playableCount(list))
+    }
+
+    // 真机实测：站点播放器写"全集 3 集"，App 却显示"5 个视频"。
+    // 原因是选集条目和媒体地址被混在一起计数 —— 3 集 + 2 个抓到的地址 = 5。
+
+    @Test
+    fun `有选集时只展示选集不混入媒体地址`() {
+        val store = PlaylistStore()
+        val merged = store.mergeEpisodes(
+            store.mergeVideos(emptyList(), listOf(media("m3u8://a"), media("m3u8://b"))),
+            listOf(episode("p/1", 1), episode("p/2", 2), episode("p/3", 3)),
+        )
+        val visible = PlaylistStore.visibleItems(merged)
+        assertEquals("连续剧只该显示 3 集", 3, visible.size)
+        assertTrue("应全是选集", visible.all { it.isEpisode })
+    }
+
+    @Test
+    fun `没有选集时才展示媒体`() {
+        val store = PlaylistStore()
+        val onlyMedia = store.mergeVideos(emptyList(), listOf(media("m3u8://a"), media("m3u8://b")))
+        val visible = PlaylistStore.visibleItems(onlyMedia)
+        assertEquals(2, visible.size)
+        assertTrue(visible.none { it.isEpisode })
+    }
+
+    @Test
+    fun `对用户展示的数量以可见条目为准`() {
+        val store = PlaylistStore()
+        val merged = store.mergeEpisodes(
+            store.mergeVideos(emptyList(), listOf(media("m3u8://a"))),
+            listOf(episode("p/1", 1), episode("p/2", 2)),
+        )
+        assertEquals("用户看到 2 集而不是 3 条", 2, PlaylistStore.visibleCount(merged))
     }
 }

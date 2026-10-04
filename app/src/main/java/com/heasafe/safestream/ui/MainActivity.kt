@@ -100,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         binding.shieldButton.setOnClickListener { toggleFilter() }
         binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
         binding.miniSpeed.setOnClickListener { cycleSpeed() }
+        // 点状态行可重新展开，否则提示淡出后就看不到了
+        binding.statusLine.setOnClickListener { showStatusBriefly() }
         // 播放器由代码创建，才能在迷你条与全屏容器之间搬运
         playerView = androidx.media3.ui.PlayerView(this).apply {
             useController = true
@@ -152,6 +154,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             getString(R.string.capability_weak, version.ifBlank { "未知版本" })
         }
+        // 同样要自动淡出，否则启动这一行会永久留在顶部
+        showStatusBriefly()
     }
 
     private fun submitUrl() {
@@ -210,6 +214,27 @@ class MainActivity : AppCompatActivity() {
             append(" · ")
             append(message)
         }
+        showStatusBriefly()
+    }
+
+    /**
+     * 状态行只作提示，几秒后自己淡出，点它才重新展开。
+     *
+     * 真机反馈：这行原本永久占着顶部，看剧时一直挡视野 —— 提示应该是
+     * "出现一下就消失"，不是常驻控件。
+     */
+    private fun showStatusBriefly() {
+        binding.statusLine.visibility = View.VISIBLE
+        binding.statusLine.alpha = 1f
+        statusHide?.removeCallbacks(hideStatus)
+        statusHide?.postDelayed(hideStatus, STATUS_VISIBLE_MS)
+    }
+
+    private val statusHide = android.os.Handler(android.os.Looper.getMainLooper())
+    private val hideStatus = Runnable {
+        binding.statusLine.animate().alpha(0f).setDuration(300).withEndAction {
+            binding.statusLine.visibility = View.GONE
+        }.start()
     }
 
     private fun toggleFilter() {
@@ -383,11 +408,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updatePlaylistUi() {
-        val n = PlaylistStore.playableCount(videos)
-        binding.fabPlaylist.text = getString(R.string.fab_count, n)
+        // 连续剧只显示选集；数字与用户实际看到的条目一致
+        val visible = PlaylistStore.visibleItems(videos)
+        val n = visible.size
+        // 小圆按钮放不下文字，用无障碍描述承载数量
+        binding.fabPlaylist.contentDescription =
+            getString(R.string.fab_count, n) + "，" + getString(R.string.fab_desc)
         binding.fabPlaylist.visibility = if (videos.isEmpty()) View.INVISIBLE else View.VISIBLE
-        sheetAdapter.submitList(videos)
-        sheetAdapter.playingIndex = currentIndex
+        sheetAdapter.submitList(visible)
+        sheetAdapter.playingIndex = visible.indexOfFirst { it.url == videos.getOrNull(currentIndex)?.url }
         sheet.findViewById<android.widget.TextView>(R.id.sheetTitle)!!.text =
             getString(R.string.playlist_title, n)
         sheet.findViewById<android.widget.TextView>(R.id.sheetEmpty)!!.visibility =
@@ -437,6 +466,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
+        /** 状态行可见时长：提示而已，不该常驻挡视野。 */
+        const val STATUS_VISIBLE_MS = 3500L
         val SPEEDS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
     }
 }

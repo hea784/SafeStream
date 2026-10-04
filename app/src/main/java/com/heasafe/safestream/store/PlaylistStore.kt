@@ -49,5 +49,20 @@ class PlaylistStore {
     companion object {
         /** 界面上显示的数量：只算真正能播的，选集与 blob 流不计入。 */
         fun playableCount(list: List<VideoItem>): Int = list.count { it.isPlayable }
+
+        /**
+         * 给用户看的条目。
+         *
+         * 有选集时只给选集：连续剧的用户要选的是"第几集"，不是页面上恰好抓到的
+         * 那几个 m3u8。真机实测站点写"全集 3 集"而 App 显示"5 个视频"，就是把
+         * 3 个选集和 2 个媒体地址混在一起数了。
+         */
+        fun visibleItems(list: List<VideoItem>): List<VideoItem> {
+            val episodes = list.filter { it.isEpisode }
+            return if (episodes.isNotEmpty()) episodes else list.filter { it.isPlayable }
+        }
+
+        /** 角标上显示的数字，与用户实际看到的条目一致。 */
+        fun visibleCount(list: List<VideoItem>): Int = visibleItems(list).size
     }
 }

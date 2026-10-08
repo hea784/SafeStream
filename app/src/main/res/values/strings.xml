@@ -2,8 +2,6 @@
 <resources>
     <string name="app_name">SafeStream</string>
     <string name="search_hint">粘贴网址或搜索</string>
-    <string name="nav_play">选集</string>
-    <string name="nav_browse">网页</string>
     <string name="now_playing">正在播放</string>
     <string name="action_shield">防护</string>
     <string name="playlist_title">发现 %1$d 个视频</string>
@@ -33,4 +31,9 @@
     <string name="meta_watched">看过</string>
     <string name="render_gone">网页渲染进程异常，正在重建</string>
     <string name="no_playable_source">这个视频没有可用的播放地址（可能是 DRM 或 blob 流）</string>
+    <string name="playlist_empty">这个页面里还没找到视频</string>
+    <string name="action_speed">切换播放倍速</string>
+    <string name="purge_confirm_title">清理全部数据？</string>
+    <string name="purge_confirm_body">会清空播放进度、当前页面与防护记录，无法恢复。</string>
+    <string name="purge_confirm_ok">清理</string>
 </resources>

@@ -26,7 +26,7 @@
         tools:text="防护 · 本次已处理 12 项"
         xmlns:tools="http://schemas.android.com/tools" />
 
-    <Switch
+    <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@+id/shieldSwitch"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

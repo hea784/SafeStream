@@ -8,7 +8,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -118,7 +117,7 @@ class MainActivity : AppCompatActivity() {
             ) { submitUrl(); true } else false
         }
         binding.shieldButton.setOnClickListener { showShieldPanel() }
-        binding.shieldButton.setOnLongClickListener { purgeEverything(); true }
+        binding.shieldButton.setOnLongClickListener { confirmPurge(); true }
         binding.miniSpeed.setOnClickListener { playback.cycleSpeed() }
         // 点状态行可重新展开，否则提示淡出后就看不到了
         binding.statusLine.setOnClickListener { showStatusBriefly() }
@@ -141,7 +140,28 @@ class MainActivity : AppCompatActivity() {
             playerView = playerView,
             miniSlot = binding.miniVideoSlot,
             fullscreenContainer = binding.fullscreenContainer,
+            // FAB 的 elevation 高于全屏容器，不隐藏会一直悬浮在视频上
+            chromeViews = listOf(binding.topBar, binding.fabPlaylist),
         )
+        // 全屏期间根布局不能吃导航条/刘海 inset：横屏时导航条 inset 落在左侧，
+        // 系统栏隐藏后这个 padding 也不会重算，实测画面左侧留 48dp 死区。
+        // 非全屏时交回 View 默认的 fitsSystemWindows 处理（状态栏/IME padding）。
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            if (fullscreen.isFullscreen) {
+                v.setPadding(0, 0, 0, 0)
+                androidx.core.view.WindowInsetsCompat.CONSUMED
+            } else {
+                // 平时交回 View 默认的 fitsSystemWindows 处理（状态栏/导航条/IME padding）
+                val platform = insets.toWindowInsets()
+                if (platform == null) {
+                    insets
+                } else {
+                    androidx.core.view.WindowInsetsCompat.toWindowInsetsCompat(
+                        v.onApplyWindowInsets(platform),
+                    )
+                }
+            }
+        }
         binding.miniPlayer.setOnClickListener { fullscreen.toggle() }
         binding.fabPlaylist.setOnClickListener { sheet.show() }
 
@@ -202,6 +222,8 @@ class MainActivity : AppCompatActivity() {
         val raw = binding.urlInput.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
         if (!submission.tryAcquire(raw, SystemClock.elapsedRealtime())) return
+        // 提交即收起键盘：页面加载/警告对话框期间键盘挡着半屏，用户得手动收
+        hideIme()
 
         when (val outcome = UrlSubmission.resolve(raw, searchEngine)) {
             is UrlSubmission.Outcome.Reject -> toast(outcome.reason)
@@ -280,7 +302,7 @@ class MainActivity : AppCompatActivity() {
             log = securityLog,
             filterEnabled = filterEnabled,
             onToggleFilter = ::toggleFilter,
-            onClear = ::purgeEverything,
+            onClear = ::confirmPurge,
         )
     }
 
@@ -311,8 +333,27 @@ class MainActivity : AppCompatActivity() {
                 searchEngine = engines[which]
                 toast("搜索引擎：" + engines[which].label)
             }
-            .setNeutralButton(R.string.settings_clear) { _, _ -> purgeEverything() }
+            .setNeutralButton(R.string.settings_clear) { _, _ -> confirmPurge() }
             .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun hideIme() {
+        val imm = getSystemService(INPUT_METHOD_SERVICE)
+            as android.view.inputmethod.InputMethodManager
+        imm.hideSoftInputFromWindow(binding.urlInput.windowToken, 0)
+    }
+
+    /**
+     * 清理数据是破坏性操作：清光播放进度、当前页面与防护记录。
+     * 三个入口（盾牌面板按钮、长按盾牌、设置页）都先确认一次，防误触。
+     */
+    private fun confirmPurge() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.purge_confirm_title)
+            .setMessage(R.string.purge_confirm_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.purge_confirm_ok) { _, _ -> purgeEverything() }
             .show()
     }
 
@@ -440,7 +481,10 @@ class MainActivity : AppCompatActivity() {
         // 小圆按钮放不下文字，用无障碍描述承载数量
         binding.fabPlaylist.contentDescription =
             getString(R.string.fab_count, n) + "，" + getString(R.string.fab_desc)
-        binding.fabPlaylist.visibility = if (videos.isEmpty()) View.INVISIBLE else View.VISIBLE
+        // 连播期间扫描仍在上报，列表可能中途变化；全屏时 FAB 一律隐藏，
+        // 否则 updatePlaylistUi 会把它重新浮到视频上
+        binding.fabPlaylist.visibility =
+            if (videos.isEmpty() || fullscreen.isFullscreen) View.INVISIBLE else View.VISIBLE
         sheetAdapter.submitList(visible) {
             // 条目没变但备注会变（播放中/看过），DiffUtil 比不出 ViewItem 之外的状态，
             // 小列表直接全量重绑，保证标记即时刷新
@@ -483,11 +527,18 @@ class MainActivity : AppCompatActivity() {
         override fun handleOnBackPressed() {
             if (fullscreen.isFullscreen) {
                 fullscreen.toggle()
-            } else {
-                isEnabled = false
-                onBackPressedDispatcher.onBackPressed()
-                isEnabled = true
+                return
             }
+            // 用户在网页里点出来的导航历史先用返回键回退（App 自己驱动的换页
+            // 已被 loadUrl 清出栈，这里只会回退到用户点过的页面），
+            // 回退栈空了才真正退出 —— 退出会触发 onDestroy 的清数据契约。
+            if (sandbox.view.canGoBack()) {
+                sandbox.view.goBack()
+                return
+            }
+            isEnabled = false
+            onBackPressedDispatcher.onBackPressed()
+            isEnabled = true
         }
     }
 

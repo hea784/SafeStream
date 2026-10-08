@@ -4,10 +4,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.Switch
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.heasafe.safestream.R
 import com.heasafe.safestream.core.SecurityLog
 
@@ -34,7 +34,7 @@ object ShieldPanel {
             EventsAdapter(log.all())
         panel.findViewById<TextView>(R.id.shieldEmpty)!!.visibility =
             if (log.count() == 0) View.VISIBLE else View.GONE
-        val sw = panel.findViewById<Switch>(R.id.shieldSwitch)!!
+        val sw = panel.findViewById<MaterialSwitch>(R.id.shieldSwitch)!!
         sw.isChecked = filterEnabled
         sw.setOnCheckedChangeListener { _, checked ->
             if (checked != filterEnabled) onToggleFilter()

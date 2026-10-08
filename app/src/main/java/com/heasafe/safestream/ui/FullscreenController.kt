@@ -17,12 +17,17 @@ class FullscreenController(
     private val playerView: androidx.media3.ui.PlayerView,
     private val miniSlot: FrameLayout,
     private val fullscreenContainer: FrameLayout,
+    /** 全屏时一并隐藏的界面元素（顶栏、FAB 等会压在视频上或分散注意力的控件）。 */
+    private val chromeViews: List<View> = emptyList(),
 ) {
 
     var isFullscreen: Boolean = false
         private set
 
     private var restoreOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+
+    // chromeViews 进入全屏前的可见性，退出时原样恢复（FAB 平时可能是 INVISIBLE）
+    private val savedChromeVisibility = mutableListOf<Pair<View, Int>>()
 
     fun toggle() {
         if (isFullscreen) exit() else enter()
@@ -32,6 +37,11 @@ class FullscreenController(
         isFullscreen = true
         restoreOrientation = activity.requestedOrientation
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        savedChromeVisibility.clear()
+        chromeViews.forEach { v ->
+            savedChromeVisibility.add(v to v.visibility)
+            v.visibility = View.GONE
+        }
         (playerView.parent as? ViewGroup)?.removeView(playerView)
         fullscreenContainer.addView(
             playerView,
@@ -50,6 +60,8 @@ class FullscreenController(
 
     private fun exit() {
         isFullscreen = false
+        savedChromeVisibility.forEach { (v, visibility) -> v.visibility = visibility }
+        savedChromeVisibility.clear()
         setSystemBarsHidden(false)
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         fullscreenContainer.removeView(playerView)

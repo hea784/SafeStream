@@ -28,3 +28,6 @@ docs/screenshots/typed-url.png
 
 # Python 字节码缓存不入库
 __pycache__/
+# video2code 插件的运行时状态（守门 hook 把本项目的 app/src 误认成复刻产物目录时生成）
+.v2c/
+out/

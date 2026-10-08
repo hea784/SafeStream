@@ -23,13 +23,20 @@
 ## 3. 架构约束
 
 - 单模块 Android App，Kotlin，ViewBinding，Material 3。
-- **双进程**：`MainActivity` 在主进程；承载 WebView 的 `WebHostActivity` 声明 `android:process=":sandbox"`。
-- 主进程与沙箱进程之间**只用显式 Intent 广播通信**（targetSdk 33+ 显式声明 `RECEIVER_NOT_EXPORTED`）。两个进程共享系统 WebView 内核，这是平台事实，隔离靠"最小权限 + 无桥接"而非"另开内核"。
-- 播放器（Media3）运行在主进程，沙箱只负责"安全地把页面渲染出来并报告发现了哪些视频"。
+- **单界面单进程**：`MainActivity` 一个界面承载全部 —— 顶部搜索栏 + 常驻 WebView +
+  迷你播放器/全屏容器。早期的"双进程双 Activity"（WebView 跑 `:sandbox` 进程、
+  Intent 广播通信）已撤销：WebView 的渲染进程本来就是 Chromium 沙箱化的独立进程，
+  `:sandbox` 多买的只是崩溃与内存压力隔离，不值一整套跨进程广播协议；
+  渲染进程崩溃由 `onRenderProcessGone` 兜底（重建网页，播放与选集状态不动）。
+- 页面→原生的唯一通道是 `addWebMessageListener`（带 allowedOriginRules 白名单），
+  不因进程合并而改变，不暴露任何原生对象。
+- 播放器（Media3）与 WebView 同处一个界面，点网页里的视频直接切到原生播放。
 
 ## 4. 安全契约（可逐条验收）
 
-1. 页面运行在**独立进程** `:sandbox`，沙箱崩溃不影响播放器。
+1. 页面渲染由 Chromium 自己的沙箱渲染进程承载（`sandboxed_process`）；宿主用
+   `onRenderProcessGone` 兜住渲染崩溃，播放器与选集状态不受影响
+   （原 `:sandbox` 双进程方案已撤销，见第 3 节）。
 2. **零 `addJavascriptInterface`**。页面→原生唯一通道是 `WebViewCompat.addWebMessageListener`（带 allowedOriginRules 白名单），不暴露任何原生对象。
 3. 拒绝一切非 `https`/`http` 的导航：`file://`、`content://`、`intent://`、`market://`、`javascript:`、`blob:`、`data:` 一律 `return true`（即拦截）。
 4. `http://` 默认拦截并提示用户"该站点未加密"，需用户显式放行。
@@ -56,6 +63,9 @@
     退出即清这条在架构合并（双 Activity 合为单 Activity）时曾被静默丢掉，
     现由 `onDestroy` 恢复；且 App 自己驱动的换页要清 WebView 回退栈，
     否则返回键被 WebView 历史吞掉、用户退不出应用（也就不会触发清理）。
+    返回键语义（2026-10-07 补）：用户在网页内点出来的导航历史可以用返回键回退
+    （`canGoBack` → `goBack`）；App 自己驱动的换页（提交网址、切集）已清出回退栈，
+    回退栈空时返回键才退出应用 —— 既保住"浏览器式回退"，也保住"退得出、退即清"。
 15. Release 包 `android:allowBackup="false"`、`android:usesCleartextTraffic="false"`、无 `android:debuggable`。
 16. URL 输入做长度与字符校验，拒绝 `javascript:` 等注入型 scheme。
 17. 页面导航剥离跟踪参数（`utm_*`、`fbclid`、`gclid`、`msclkid`、`igshid`、
@@ -82,7 +92,9 @@
 - 原生播放器：播放/暂停、拖动、时长、倍速
 - 断点续播（进度以 URL 哈希为 key）
 - 广告/跟踪拦截开关与拦截计数
-- 一键停止沙箱并清理全部本地数据
+- 一键停止沙箱并清理全部本地数据（三个入口均需二次确认，防误触清光播放进度）
+- 返回键回退网页历史（回退栈空才退出应用）
+- 全屏沉浸：隐藏顶栏与选集浮标、导航条/刘海 inset 归零；提交网址后收起键盘
 
 **已从文档中移除（原先列出但从未实现，或不属于实际用途）**
 
@@ -114,7 +126,7 @@
 | `assembleDebug` / `assembleRelease` | 已通过 |
 | App 冷启动、无崩溃 | 已通过 |
 | 明文 HTTP 触发警告对话框 | 已通过 |
-| 沙箱以 `:sandbox` 独立进程运行 | 已通过（ps 实证两个 pid） |
+| 沙箱以 `:sandbox` 独立进程运行 | 已撤销（架构合并为单界面，见第 3 节；渲染崩溃兜底改由 `onRenderProcessGone` 承担） |
 | 广告/跟踪请求被拦截 | 已通过（实测拦下 google-analytics、googlesyndication） |
 | 无外部 Activity 被拉起（file:// / intent:// / market://） | 已通过 |
 | 自动发现 3 个视频 | 已通过 |

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 选集/播放列表图标（Material 风格 playlist_play）：三行列表 + 右侧播放三角。
+     FAB 原先复用浏览态的放大镜图标，语义错位 —— 它打开的是播放列表，不是搜索。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,7H3v2h9V7z M12,11H3v2h9V11z M12,15H3v2h9V15z M15,9.5v5l4.5,-2.5L15,9.5z" />
+</vector>

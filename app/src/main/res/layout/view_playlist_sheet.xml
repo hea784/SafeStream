@@ -47,6 +47,7 @@
             android:layout_marginStart="32dp"
             android:layout_marginEnd="32dp"
             android:gravity="center"
+            android:text="@string/playlist_empty"
             android:textAppearance="@style/TextAppearance.SafeStream.Meta"
             tools:text="这个页面里还没找到视频" />
     </FrameLayout>

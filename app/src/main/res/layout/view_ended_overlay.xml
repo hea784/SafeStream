@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放结束覆盖层：全屏黑屏上给一个明确的重播入口，
+     而不是让用户面对无声黑屏猜测是卡住了还是播完了。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/endedOverlay"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#B3000000"
+    android:visibility="gone">
+
+    <ImageButton
+        android:id="@+id/replayButton"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_gravity="center"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/replay"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_replay"
+        app:tint="@color/text_primary" />
+</FrameLayout>

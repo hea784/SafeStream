@@ -35,9 +35,20 @@ class PlaybackSession(
     private val drmSystem: () -> String?,
     /** 本集播完：上层决定连播与否。 */
     private val onEnded: () -> Unit,
+    /** 播放结束态变化（true=播完停在末尾，false=重新开始播放）。上层据此刻重播覆盖层。 */
+    private val onEndedStateChanged: (Boolean) -> Unit = {},
 ) {
 
     val player: ExoPlayer = ExoPlayer.Builder(binding.root.context).build()
+
+    /**
+     * 当前视频宽高比（width/height），未知为 0。
+     * 全屏方向据此自适应：横屏视频转横屏，竖屏视频保持竖屏
+     * （固定 SENSOR_LANDSCAPE 会让竖屏视频上下大黑边）。
+     */
+    @Volatile
+    var videoAspectRatio: Float = 0f
+        private set
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -82,7 +93,23 @@ class PlaybackSession(
 
             override fun onPlaybackStateChanged(state: Int) {
                 refreshToggleIcon()
-                if (state == Player.STATE_ENDED) onEnded()
+                when (state) {
+                    Player.STATE_ENDED -> {
+                        onEndedStateChanged(true)
+                        onEnded()
+                    }
+                    // STATE_READY 覆盖播完后的重播/seek 回退：覆盖层只在"停在末尾"时在
+                    Player.STATE_READY -> onEndedStateChanged(false)
+                }
+            }
+
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                videoAspectRatio = if (videoSize.height == 0) {
+                    0f
+                } else {
+                    videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio /
+                        videoSize.height.toFloat()
+                }
             }
         })
         handler.post(progressTick)
@@ -90,6 +117,7 @@ class PlaybackSession(
 
     /** 加载并播放一个媒体项。同地址已在播不重建，否则画面反复重置会闪。 */
     fun play(item: VideoItem) {
+        videoAspectRatio = 0f
         val mediaItem = MediaItem.Builder()
             .setUri(item.url)
             .setMediaId(item.url)

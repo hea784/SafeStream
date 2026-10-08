@@ -56,9 +56,35 @@ class HistoryStore(context: Context) {
     fun hasOpened(url: String): Boolean =
         prefs.getStringSet(OPENED_KEY, emptySet())?.contains(url) == true
 
+    /**
+     * 记一个"最近打开的页面"（仅页面地址，不含媒体直链），供地址栏下拉补全。
+     *
+     * 与进度/开集记录分开存：这两者按 URL 哈希记 key，不可读出原文；
+     * 补全需要把原文列出来。只存页面（loadUrl 的入口），媒体直链
+     * （m3u8/mp4 签名地址）不进这里 —— 长且每轮变，列出来没有价值。
+     * 有界：最近的在前，超出上限从尾部丢弃，防止 prefs 无限膨胀。
+     */
+    fun markVisited(url: String) {
+        if (url.isBlank() || com.heasafe.safestream.core.UrlGuard.isEphemeral(url)) return
+        val current = recentPages().toMutableList()
+        current.removeAll { it == url }
+        current.add(0, url)
+        while (current.size > RECENT_LIMIT) current.removeAt(current.size - 1)
+        prefs.edit().putString(RECENT_KEY, current.joinToString("\n")).apply()
+    }
+
+    /** 最近打开的页面，最新的在前。 */
+    fun recentPages(): List<String> =
+        prefs.getString(RECENT_KEY, null)
+            ?.split('\n')
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+
     fun clearAll() = prefs.edit().clear().apply()
 
     private companion object {
         const val OPENED_KEY = "opened_episodes"
+        const val RECENT_KEY = "recent_pages"
+        const val RECENT_LIMIT = 12
     }
 }

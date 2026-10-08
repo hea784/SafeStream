@@ -19,6 +19,8 @@ class FullscreenController(
     private val fullscreenContainer: FrameLayout,
     /** 全屏时一并隐藏的界面元素（顶栏、FAB 等会压在视频上或分散注意力的控件）。 */
     private val chromeViews: List<View> = emptyList(),
+    /** 当前视频宽高比（width/height），未知为 0。决定全屏方向。 */
+    private val videoAspectRatio: () -> Float = { 0f },
 ) {
 
     var isFullscreen: Boolean = false
@@ -36,7 +38,14 @@ class FullscreenController(
     private fun enter() {
         isFullscreen = true
         restoreOrientation = activity.requestedOrientation
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // 方向跟视频走：竖屏视频（高>宽）保持竖屏，其余转横屏；
+        // 宽高比未知（还没解出流）跟随传感器
+        val ratio = videoAspectRatio()
+        activity.requestedOrientation = when {
+            ratio <= 0f -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            ratio < 1f -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         savedChromeVisibility.clear()
         chromeViews.forEach { v ->
             savedChromeVisibility.add(v to v.visibility)

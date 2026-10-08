@@ -42,6 +42,9 @@ class WebSandbox(
     /** 渲染进程崩溃等致命情况：宿主应重建 WebView 而不是留着半死状态。 */
     var onFatal: ((String) -> Unit)? = null
 
+    /** 主框架加载失败（网络不可用、域名解析失败等）：宿主展示错误页。 */
+    var onLoadError: ((String) -> Unit)? = null
+
     var filterEnabled: Boolean = true
 
     private var insecureAllowedHost: String? = null
@@ -86,7 +89,10 @@ class WebSandbox(
         ).also { c ->
             c.filterEnabled = filterEnabled
             c.insecureHostConfirmed = insecureAllowedHost
-        c.onLoadError = { detail -> report("加载失败：$detail") }
+        c.onLoadError = { detail ->
+            report("加载失败：$detail")
+            onMain { onLoadError?.invoke(detail) }
+        }
         c.onPageStart = { onMain { injectScanner() } }
         c.onPageDone = { onMain { injectScanner() } }
         c.onRenderGone = {

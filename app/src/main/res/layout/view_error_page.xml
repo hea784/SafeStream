@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  加载失败错误页：盖在网页上。WebView 加载失败原本只有状态行一闪而过，
+  用户面对的是黑屏 —— 这里给失败原因 + 重试入口。
+  与 browseHint 同底色（bg_root），无网页内容时视觉连续。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/errorPage"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_root"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="32dp"
+    android:visibility="gone">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/load_failed_title"
+        android:textAppearance="@style/TextAppearance.SafeStream.Title" />
+
+    <TextView
+        android:id="@+id/errorDetail"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:text="@string/load_failed_detail"
+        android:textAppearance="@style/TextAppearance.SafeStream.Meta" />
+
+    <Button
+        android:id="@+id/retryButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="@string/retry" />
+</LinearLayout>

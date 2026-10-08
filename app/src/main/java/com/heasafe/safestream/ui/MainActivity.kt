@@ -43,6 +43,21 @@ class MainActivity : AppCompatActivity() {
     private val playlist = PlaylistStore()
     private lateinit var fullscreen: FullscreenController
     private lateinit var playerView: androidx.media3.ui.PlayerView
+    private lateinit var endedOverlay: View
+    private lateinit var suggestOverlay: ViewGroup
+    private lateinit var suggestAdapter: UrlSuggestAdapter
+    private lateinit var errorPage: ViewGroup
+
+    /** 主框架加载失败：显示错误页（盖在 WebView 上），带上 WebView 报的原始原因。 */
+    private fun showLoadError(detail: String) {
+        errorPage.findViewById<TextView>(R.id.errorDetail).text =
+            getString(R.string.load_failed_detail) + "\n\n" + detail
+        errorPage.visibility = View.VISIBLE
+    }
+
+    private fun hideLoadError() {
+        errorPage.visibility = View.GONE
+    }
     private lateinit var sheet: BottomSheetDialog
     private lateinit var sheetAdapter: PlaylistAdapter
 
@@ -102,6 +117,8 @@ class MainActivity : AppCompatActivity() {
         )
         sandbox.filterEnabled = filterEnabled
         sandbox.onFatal = { binding.statusLine.text = getString(R.string.render_gone) }
+        // 主框架加载失败：给错误页 + 重试，而不是让用户面对黑屏猜
+        sandbox.onLoadError = { detail -> showLoadError(detail) }
         // 用沙箱自己的 WebView 替换布局里的占位 ViewView
         binding.contentContainer.addView(
             sandbox.view,
@@ -110,12 +127,24 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        // 错误页盖在 WebView 之上（同 View 树，show/hide 即可，无需动 WebView）
+        errorPage = layoutInflater.inflate(
+            R.layout.view_error_page,
+            binding.contentContainer,
+            false,
+        ) as ViewGroup
+        binding.contentContainer.addView(errorPage)
+        errorPage.findViewById<Button>(R.id.retryButton).setOnClickListener {
+            hideLoadError()
+            lastSandboxUrl?.let { sandbox.load(it, insecureHostAllowed) }
+        }
 
         binding.urlInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH ||
                 actionId == EditorInfo.IME_ACTION_GO
             ) { submitUrl(); true } else false
         }
+        setupUrlSuggestions()
         binding.shieldButton.setOnClickListener { showShieldPanel() }
         binding.shieldButton.setOnLongClickListener { confirmPurge(); true }
         binding.miniSpeed.setOnClickListener { playback.cycleSpeed() }
@@ -135,6 +164,20 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        // 播放结束覆盖层：盖在全屏容器上（迷你条此时只是缩略图，不需要它）。
+        // 点重播 = 从头再播当前媒体；开始新播放或换页时隐藏。
+        endedOverlay = layoutInflater.inflate(R.layout.view_ended_overlay, binding.fullscreenContainer, false)
+        binding.fullscreenContainer.addView(endedOverlay)
+        endedOverlay.findViewById<android.widget.ImageButton>(R.id.replayButton).setOnClickListener {
+            hideEndedOverlay()
+            val item = playingItem()
+            if (item != null) {
+                playback.play(item)
+            } else {
+                fullscreen.toggle()
+            }
+        }
+
         fullscreen = FullscreenController(
             activity = this,
             playerView = playerView,
@@ -142,6 +185,7 @@ class MainActivity : AppCompatActivity() {
             fullscreenContainer = binding.fullscreenContainer,
             // FAB 的 elevation 高于全屏容器，不隐藏会一直悬浮在视频上
             chromeViews = listOf(binding.topBar, binding.fabPlaylist),
+            videoAspectRatio = { playback.videoAspectRatio },
         )
         // 全屏期间根布局不能吃导航条/刘海 inset：横屏时导航条 inset 落在左侧，
         // 系统栏隐藏后这个 padding 也不会重算，实测画面左侧留 48dp 死区。
@@ -178,7 +222,20 @@ class MainActivity : AppCompatActivity() {
             playingUrl = { playingUrl },
             drmSystem = { sandbox.drmSystem },
             onEnded = ::onPlaybackEnded,
+            onEndedStateChanged = { ended -> if (ended) showEndedOverlay() else hideEndedOverlay() },
         )
+    }
+
+    /** 播完：全屏里出现重播入口，别让用户对着无声黑屏猜是卡住还是完了。 */
+    private fun showEndedOverlay() {
+        endedOverlay.visibility = View.VISIBLE
+        endedOverlay.alpha = 0f
+        endedOverlay.animate().alpha(1f).setDuration(250).start()
+    }
+
+    private fun hideEndedOverlay() {
+        endedOverlay.visibility = View.GONE
+        endedOverlay.alpha = 1f
     }
 
     /**
@@ -218,12 +275,65 @@ class MainActivity : AppCompatActivity() {
         showStatusBriefly()
     }
 
+    /**
+     * 地址栏补全：聚焦且最近页面非空时，在网页上方弹出最近页面列表。
+     *
+     * 不用 AutoCompleteTextView：它的下拉是弹窗，与全屏沉浸切换会打架；
+     * 直接把浮层挂在 contentContainer 顶层，点条目即加载，失焦即收。
+     */
+    private fun setupUrlSuggestions() {
+        suggestAdapter = UrlSuggestAdapter { picked ->
+            hideUrlSuggestions()
+            binding.urlInput.setText(picked)
+            binding.urlInput.setSelection(picked.length)
+            // 走 submitUrl 而不是直接 loadUrl：明文地址需要过"该站点未加密"确认，
+            // 直接 loadUrl(url, null) 会被 shouldBlockCleartext 静默拦成黑屏
+            submitUrl()
+        }
+        suggestOverlay = layoutInflater.inflate(
+            R.layout.view_url_suggestions,
+            binding.contentContainer,
+            false,
+        ) as ViewGroup
+        binding.contentContainer.addView(suggestOverlay)
+        suggestOverlay.findViewById<RecyclerView>(R.id.suggestList).adapter = suggestAdapter
+        // 用点击而不是焦点驱动显示：WebView 加载完成会 requestFocus 抢走焦点，
+        // 焦点驱动的浮层会"闪现即消失"。点击意图明确 —— 点地址栏就是要输入。
+        binding.urlInput.setOnClickListener {
+            if (suggestOverlay.visibility == View.VISIBLE) {
+                hideUrlSuggestions()
+            } else {
+                showUrlSuggestions()
+            }
+        }
+        binding.urlInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) hideUrlSuggestions()
+        }
+        // 点网页即收起（WebView 自己消费触摸，这里只负责藏浮层）
+        sandbox.view.setOnTouchListener { _, _ ->
+            hideUrlSuggestions()
+            false
+        }
+    }
+
+    private fun showUrlSuggestions() {
+        val pages = history.recentPages()
+        if (pages.isEmpty()) return
+        suggestAdapter.submit(pages)
+        suggestOverlay.visibility = View.VISIBLE
+    }
+
+    private fun hideUrlSuggestions() {
+        suggestOverlay.visibility = View.GONE
+    }
+
     private fun submitUrl() {
         val raw = binding.urlInput.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
         if (!submission.tryAcquire(raw, SystemClock.elapsedRealtime())) return
         // 提交即收起键盘：页面加载/警告对话框期间键盘挡着半屏，用户得手动收
         hideIme()
+        hideUrlSuggestions()
 
         when (val outcome = UrlSubmission.resolve(raw, searchEngine)) {
             is UrlSubmission.Outcome.Reject -> toast(outcome.reason)
@@ -245,6 +355,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadUrl(url: String, insecureHost: String?) {
+        hideEndedOverlay()
+        hideUrlSuggestions()
+        hideLoadError()
         pendingEpisode = null
         playingEpisode = null
         playingUrl = null
@@ -255,6 +368,7 @@ class MainActivity : AppCompatActivity() {
 
         insecureHostAllowed = insecureHost
         lastSandboxUrl = url
+        history.markVisited(url)
         binding.urlInput.setText(url)
         binding.urlInput.setSelection(url.length)
         sandbox.filterEnabled = filterEnabled
@@ -454,6 +568,7 @@ class MainActivity : AppCompatActivity() {
         }
         // 同地址已在播放/加载中就不重建 MediaItem，否则画面反复重置闪烁
         if (item.url == playingUrl) return
+        hideEndedOverlay()
         playingUrl = item.url
         adapter.playingIndex = index
         playback.play(item)

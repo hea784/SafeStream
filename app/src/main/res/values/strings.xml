@@ -36,4 +36,10 @@
     <string name="purge_confirm_title">清理全部数据？</string>
     <string name="purge_confirm_body">会清空播放进度、当前页面与防护记录，无法恢复。</string>
     <string name="purge_confirm_ok">清理</string>
+    <string name="replay">重播</string>
+    <string name="recent_pages">最近打开的页面</string>
+    <string name="no_recent_pages">还没有打开过页面</string>
+    <string name="load_failed_title">页面加载失败</string>
+    <string name="load_failed_detail">无法加载这个页面：可能已下线、域名被拦，或网络不可用。</string>
+    <string name="retry">重试</string>
 </resources>

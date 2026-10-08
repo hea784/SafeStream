@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  地址栏补全建议浮层：挂在 topBar 正下方，覆盖在网页之上。
+  只在地址栏聚焦且最近页面非空时出现；点条目直接加载，点外部消失。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/suggestOverlay"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_sheet"
+    android:orientation="vertical"
+    android:paddingBottom="8dp"
+    android:translationZ="8dp"
+    android:visibility="gone">
+
+    <TextView
+        android:id="@+id/suggestTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp"
+        android:text="@string/recent_pages"
+        android:textAppearance="@style/TextAppearance.SafeStream.Meta" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/suggestList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:overScrollMode="ifContentScrolls"
+        app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+</LinearLayout>
